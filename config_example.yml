@@ -8,7 +8,9 @@ psql_db:
 
 paths:
   path_osm2po: /home/maxmustermann/osm2po-5.5.5
+  path_osmconvert: /usr/bin/convert
   path_psql: /usr/bin/psql
   path_postgis: /usr/bin/postgis
+  
 
 

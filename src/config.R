@@ -1,10 +1,14 @@
 ################################################################################
-# Postgresql-DB connection
+# Libraries
 ################################################################################
 library(dplyr)
 library(here)
-
-
+library(processx)
+library(yaml)
+library(RPostgres)
+library(parallel)
+library(crayon)
+library(sf)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -28,3 +32,37 @@ if(!exists("con")){
 
 char_os <-   Sys.info()["sysname"] %>% as.character()
 int_cores <- detectCores()-2
+
+
+
+################################################################################
+# External software required
+################################################################################
+external_path_osm2po <- config$paths$path_osm2po
+external_path_osmconvert <- config$paths$path_osmconvert
+external_path_psql <- config$paths$path_psql
+external_path_postgis <- config$paths$path_postgis
+char_all_externalPaths <- ls(pattern = "^external")
+list_external_paths <- mget(char_all_externalPaths)
+
+for(i in 1:length(list_external_paths)){
+	file <- list_external_paths[[i]]
+	if(file.exists(file)){
+		message(file, " exists. ", green("\u2713"))
+	} else {
+		message(file, " doesn't exist. ", red("\u274C"))
+	}
+}
+
+
+log_check_postgis <- dbGetQuery(con, 
+																"SELECT EXISTS(SELECT 1 FROM pg_extension 
+																WHERE extname = 'postgis');") %>% pull
+
+if (log_check_postgis) {
+	message("PostGIS-extension for Postgresql exists. ", 
+					green("\u2713"))
+} else {
+	message("PostGIS-extension for Postgresql getd created.")
+	dbExecute(con, "CREATE EXTENSION postgis")
+}
