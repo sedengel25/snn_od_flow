@@ -1,0 +1,14 @@
+psql_db:
+  host: localhost
+  port: 5432
+  dbname: mydatabase
+  user: myuser
+  password: mypw
+
+
+paths:
+  path_osm2po: /home/maxmustermann/osm2po-5.5.5
+  path_psql: /usr/bin/psql
+  path_postgis: /usr/bin/postgis
+
+
