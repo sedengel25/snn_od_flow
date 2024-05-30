@@ -66,3 +66,25 @@ if (log_check_postgis) {
 	message("PostGIS-extension for Postgresql getd created.")
 	dbExecute(con, "CREATE EXTENSION postgis")
 }
+
+
+################################################################################
+# Paths
+################################################################################
+path_bbox_coordinates <- "data/bbox_coordinates"
+
+path_osm_pbf <- "data/osm_pbf"
+
+
+path_osm2po_jar <- here::here(external_path_osm2po,
+															"osm2po-core-5.5.5-signed.jar")
+################################################################################
+# File
+################################################################################
+file_ger_osm_pbf <- here::here(path_osm_pbf, 
+															 "germany-latest.osm.pbf")  
+
+################################################################################
+# File-endings
+################################################################################
+ending_polygon <- ".poly"

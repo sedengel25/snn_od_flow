@@ -1,6 +1,35 @@
 source("./src/utils/cmd.R")
 source("./src/utils/psql_1.R")
 
+# Documentation: osmconvert_create_sub_osm_pbf
+# Usage: osmconvert_create_sub_osm_pbf()
+# Description: Creates a sub osm.pbf-file based on the polygon specified
+# Args/Options: ...
+# Returns: ...
+# Output: ...
+# Action: Executes a 'osmconvert' command
+osmconvert_create_sub_osm_pbf <- function() {
+
+	
+	
+	char_cmd_osmconvert <- paste(
+		"osmconvert", 
+		shQuote(file_ger_osm_pbf),
+		paste("-B=", shQuote(char_polygon_file), sep=""), 
+		paste("-o=", shQuote(char_output_file), sep="")
+	)
+	
+	print(char_cmd_osmconvert)
+	
+	
+	int_exit_status <- system(char_cmd_osmconvert)
+	
+	if(int_exit_status == 0){
+		print(paste0(chat_output_filename, " successfully created in ", path_osm_pbf))
+	}
+}
+
+
 # Documentation: osm2po_create_routable_network
 # Usage: osm2po_create_routable_network()
 # Description: Creates in osm2po a sql-file that generates a network based on the
@@ -11,21 +40,17 @@ source("./src/utils/psql_1.R")
 # Action: Executing several cmd- and psql-queries
 osm2po_create_routable_network <- function() {
 	
-	# Prepare system-command to be executed...
-	char_cmd_chmod <- paste("chmod +x", shQuote(file.path(external_path_osm2po,
-																												char_sh_file)))
-	
-	# ...to permit access to sh-file (necessary on Linux-systems).
-	int_exit_status <- system(char_cmd_chmod)
-	
-	if(int_exit_status != 0){
-		stop("No Permission access for ", char_sh_file,"\n")
-	}
-	
 	# Prepare system command for executing the sh-file
-	char_cmd_osm2po <- paste0("cd ", shQuote(external_path_osm2po), 
-														" && ./", shQuote(char_sh_file))
+	char_cmd_osm2po <- paste(
+		"java -Xmx1g -jar", 
+		shQuote(path_osm2po_jar),
+		paste("prefix=", shQuote(char_region_abb), sep=""),
+		paste("tileSize=", shQuote("x"), sep=""),
+		shQuote(char_output_file),
+		"postp.0.class=de.cm.osm2po.plugins.postp.PgRoutingWriter"
+	)
 	
+	print(char_cmd_osm2po)
 	# Use 'prossex'-lib to control system processes in the backrgound
 	p <- processx::process$new("bash", 
 														 args = c("-c", char_cmd_osm2po),
@@ -44,7 +69,7 @@ osm2po_create_routable_network <- function() {
 		if(length(output) > 0 && finished_message %in% output){
 			
 			#...and if the sql-file got created...
-			if(char_sql_filename %in% list.files(path = char_path_region,
+			if(char_sql_filename %in% list.files(path = char_region_abb,
 																					 pattern = "*.sql")){
 				print("SQL file for routable road network successfully created")
 				#...the process is killed the while-loop breaks.
@@ -64,7 +89,7 @@ osm2po_create_routable_network <- function() {
 	
 	
 	# Execute SQL file to write table in PSQL database
-	bash_execute_sql_file(path_to_sql_file = here::here(char_path_region, 
+	bash_execute_sql_file(path_to_sql_file = here::here(char_region_abb, 
 																											char_sql_filename))
 	
 	
