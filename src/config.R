@@ -9,6 +9,9 @@ library(RPostgres)
 library(parallel)
 library(crayon)
 library(sf)
+library(reticulate)
+library(data.table)
+library(Rcpp)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -75,16 +78,33 @@ path_bbox_coordinates <- "data/bbox_coordinates"
 
 path_osm_pbf <- "data/osm_pbf"
 
-
-path_osm2po_jar <- here::here(external_path_osm2po,
-															"osm2po-core-5.5.5-signed.jar")
+path_osm_sql <- here::here("data/osm_sql")
 ################################################################################
 # File
 ################################################################################
 file_ger_osm_pbf <- here::here(path_osm_pbf, 
 															 "germany-latest.osm.pbf")  
 
+file_osm2po_jar <- here::here(external_path_osm2po,
+															"osm2po-core-5.5.5-signed.jar")
 ################################################################################
 # File-endings
 ################################################################################
 ending_polygon <- ".poly"
+
+
+################################################################################
+# Folders
+################################################################################
+path_variables <- ls(pattern = "^path")
+
+path_variables <- path_variables[-length(path_variables)]
+
+lapply(mget(path_variables), function(paths) {
+	for (x in paths) {
+		if (!dir.exists(x)){
+			dir.create(x, recursive = TRUE)
+		}
+	}
+})
+

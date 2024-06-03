@@ -16,7 +16,7 @@ osmconvert_create_sub_osm_pbf <- function() {
 		"osmconvert", 
 		shQuote(file_ger_osm_pbf),
 		paste("-B=", shQuote(char_polygon_file), sep=""), 
-		paste("-o=", shQuote(char_output_file), sep="")
+		paste("-o=", shQuote(char_pbf_file), sep="")
 	)
 	
 	print(char_cmd_osmconvert)
@@ -25,7 +25,7 @@ osmconvert_create_sub_osm_pbf <- function() {
 	int_exit_status <- system(char_cmd_osmconvert)
 	
 	if(int_exit_status == 0){
-		print(paste0(chat_output_filename, " successfully created in ", path_osm_pbf))
+		print(paste0(chat_pbf_filename, " successfully created in ", path_osm_pbf))
 	}
 }
 
@@ -43,15 +43,17 @@ osm2po_create_routable_network <- function() {
 	# Prepare system command for executing the sh-file
 	char_cmd_osm2po <- paste(
 		"java -Xmx1g -jar", 
-		shQuote(path_osm2po_jar),
+		shQuote(file_osm2po_jar),
 		paste("prefix=", shQuote(char_region_abb), sep=""),
 		paste("tileSize=", shQuote("x"), sep=""),
-		shQuote(char_output_file),
-		"postp.0.class=de.cm.osm2po.plugins.postp.PgRoutingWriter"
-	)
+		shQuote(char_pbf_file),
+		"postp.0.class=de.cm.osm2po.plugins.postp.PgRoutingWriter",
+		paste("workDir=", shQuote(here::here(path_osm_sql,
+																				 char_region_abb)), sep="")
+)
 	
 	print(char_cmd_osm2po)
-	# Use 'prossex'-lib to control system processes in the backrgound
+	# Use 'processx'-lib to control system processes in the backrgound
 	p <- processx::process$new("bash", 
 														 args = c("-c", char_cmd_osm2po),
 														 stdout = "|", stderr = "|")
@@ -69,7 +71,8 @@ osm2po_create_routable_network <- function() {
 		if(length(output) > 0 && finished_message %in% output){
 			
 			#...and if the sql-file got created...
-			if(char_sql_filename %in% list.files(path = char_region_abb,
+			if(char_sql_filename %in% list.files(path = here::here(path_osm_sql,
+																														 char_region_abb),
 																					 pattern = "*.sql")){
 				print("SQL file for routable road network successfully created")
 				#...the process is killed the while-loop breaks.
@@ -89,7 +92,8 @@ osm2po_create_routable_network <- function() {
 	
 	
 	# Execute SQL file to write table in PSQL database
-	bash_execute_sql_file(path_to_sql_file = here::here(char_region_abb, 
+	bash_execute_sql_file(path_to_sql_file = here::here(path_osm_sql, 
+																											char_region_abb,
 																											char_sql_filename))
 	
 	
@@ -100,3 +104,75 @@ osm2po_create_routable_network <- function() {
 	psql1_transform_coordinates(con, table = char_network)
 	psql1_update_srid(con, table = char_network, crs = 32632)
 }
+
+
+
+
+
+
+
+calc_local_node_dist_mat <- function() {
+	# Check whether osm2po has created a coherent graph
+	igraph_network <- sf_network %>%
+		as.data.frame() %>%
+		rename("from" = "source",
+					 "to" = "target") %>%
+		select(from, to) %>% 
+		igraph::graph_from_data_frame() 
+	
+	igraph_network_components <- igraph::components(igraph_network)
+	
+	cat("Total components: ", 
+			igraph_network_components$csize %>% sum, "\n")
+	
+	cat("Biggest number of cohrerent components: ",
+			max(igraph_network_components$csize), "\n")
+	
+	#reticulate::install_python()
+	#reticulate::install_miniconda()
+	# Initiate the environment
+	reticulate::py_install("networkx", 
+												 envname = "r-reticulate", 
+												 method = "virtualenv")
+	
+	
+	reticulate::py_install("numpy", 
+												 envname = "r-reticulate", 
+												 method = "virtualenv")
+	reticulate::use_virtualenv("r-reticulate", required = TRUE)
+	nx <- reticulate::import("networkx")
+	np <- reticulate::import("numpy")
+	
+	
+	# Create a graph from the sub street network
+	g <- nx$from_pandas_edgelist(df = sf_network,
+															 source = "source",
+															 target = "target",
+															 edge_attr = "m",
+															 edge_key = "id")
+	
+	nodes <- c(sf_network$source, sf_network$target) %>% unique
+	
+	list_dt <- vector("list", length(nodes))
+	
+	shortest_paths_per_node <- function(node, buffer) {
+		res = nx$single_source_dijkstra_path_length(g, 
+																								source = node, 
+																								weight = "m", 
+																								cutoff = buffer)
+		
+		targets = names(res) %>% as.integer
+		sources = rep(node, length(targets))
+		distances = res %>% as.numeric
+		
+		data.table(source = sources, target = targets, m = distances)
+	}
+	
+	list_dt <- parallel::mclapply(nodes, 
+																shortest_paths_per_node,
+																buffer = int_buffer,
+																mc.cores = 1)
+	
+	dt_dist_mat <- rbindlist(list_dt)
+}
+
