@@ -25,7 +25,7 @@ osmconvert_create_sub_osm_pbf <- function() {
 	int_exit_status <- system(char_cmd_osmconvert)
 	
 	if(int_exit_status == 0){
-		print(paste0(chat_pbf_filename, " successfully created in ", path_osm_pbf))
+		print(paste0(char_pbf_file, " successfully created in ", path_osm_pbf))
 	}
 }
 
@@ -103,6 +103,7 @@ osm2po_create_routable_network <- function() {
 	psql1_set_srid(con, table = char_network, srid)
 	psql1_transform_coordinates(con, table = char_network)
 	psql1_update_srid(con, table = char_network, crs = 32632)
+	psql1_create_spatial_index(con, table = char_network)
 }
 
 

@@ -12,6 +12,8 @@ library(sf)
 library(reticulate)
 library(data.table)
 library(Rcpp)
+library(readr)
+library(lubridate)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

@@ -12,8 +12,10 @@ psql2_get_name_of_geom_col <- function(con, table) {
 									table,
 									"' AND udt_name = 'geometry';")
 	
-	col_name <- dbGetQuery(con, query) %>% as.character()
-	return(col_name)
+	col_name_df <- dbGetQuery(con, query) 
+	
+	col_name_vec <- paste0(as.character(col_name_df$column_name), collapse = ", ")
+	return(col_name_vec)
 }
 
 
@@ -33,3 +35,5 @@ psql2_get_geometry_type <- function(con, table) {
 	geom_types <- dbGetQuery(con, query) %>% as.character()
 	return(geom_types)
 }
+
+
