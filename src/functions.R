@@ -1,5 +1,7 @@
 source("./src/utils/cmd.R")
 source("./src/utils/psql_1.R")
+source("./src/utils/psql_2.R")
+source("./src/utils/r1.R")
 
 # Documentation: osmconvert_create_sub_osm_pbf
 # Usage: osmconvert_create_sub_osm_pbf()

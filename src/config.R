@@ -81,6 +81,8 @@ path_bbox_coordinates <- "data/bbox_coordinates"
 path_osm_pbf <- "data/osm_pbf"
 
 path_osm_sql <- here::here("data/osm_sql")
+
+path_input_data <- "data/input"
 ################################################################################
 # File
 ################################################################################
