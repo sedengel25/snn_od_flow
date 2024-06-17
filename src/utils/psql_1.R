@@ -182,3 +182,59 @@ psql1_map_od_points_onto_network <- function(con, table_network) {
 	cat(query)
 	dbExecute(con, query)
 }
+
+
+
+# Documentation: psql1_calc_nd_diff_roads
+# Usage: psql1_calc_nd_diff_roads(con, o_d, table_mapped_points, table_network,
+# table_dist_mat, table_nd, id_start, id_end)
+# Description: Execute query calculating the NDs between all Os and Ds. It is
+# more advanced than 'psql_calc_nd' since the query itself is not only 
+# parallelized for the Origin- & dest-Points but for differently sized chunks
+# of the IDs to compute
+# Args/Options: con, o_d, table_mapped_points, table_network,
+# table_dist_mat, table_nd, id_start, id_end
+# Returns: ...
+# Output: ...
+# Action: Executing a psql-query
+psql1_calc_nd_diff_roads <- function(con, 
+																		 table_pts, 
+																		 table_network,
+																		 table_dist_mat, 
+																		 table_nd, 
+																		 id_start, 
+																		 id_end) {
+	
+	con <- dbConnect(RPostgres::Postgres(),
+									 dbname = dbname,
+									 host = host,
+									 port = 5432,
+									 user = user,
+									 password = pw,
+									 options="-c client_min_messages=warning")
+	
+	
+	query <- paste0(
+		"INSERT INTO ", table_nd, " SELECT m1.id_new as o_m, m2.id_new as o_n, 
+		LEAST(
+		m1.dist_to_start + m1.dist_to_start + COALESCE(pi_pk.m, 0),
+		m2.dist_to_end + m2.dist_to_end + COALESCE(pj_pl.m, 0),
+		m1.dist_to_start + m2.dist_to_end + COALESCE(pi_pl.m, 0),
+		m2.dist_to_end + m1.dist_to_start + COALESCE(pj_pk.m, 0)
+		) AS nd ",
+		"FROM ", table_pts, " m1 ",
+		"CROSS JOIN ", table_pts, " m2 ",
+		"INNER JOIN ", table_network, " e_ij ON m1.id_edge = e_ij.id ",
+		"INNER JOIN ", table_network, " e_kl ON m2.id_edge = e_kl.id ",
+		"INNER JOIN ", table_dist_mat, " pi_pk ON pi_pk.source = LEAST(e_ij.source, e_kl.source) AND pi_pk.target = GREATEST(e_ij.source, e_kl.source) ",
+		"INNER JOIN ", table_dist_mat, " pj_pl ON pj_pl.source = LEAST(e_ij.target, e_kl.target) AND pj_pl.target = GREATEST(e_ij.target, e_kl.target) ",
+		"INNER JOIN ", table_dist_mat, " pi_pl ON pi_pl.source = LEAST(e_ij.source, e_kl.target) AND pi_pl.target = GREATEST(e_ij.source, e_kl.target) ",
+		"INNER JOIN ", table_dist_mat, " pj_pk ON pj_pk.source = LEAST(e_ij.target, e_kl.source) AND pj_pk.target = GREATEST(e_ij.target, e_kl.source) ",
+		"WHERE m1.id_new >= ", id_start, 
+		" AND m1.id_new <= ", id_end, 
+		" AND m1.id_new < m2.id_new	AND m1.id_edge != m2.id_edge;")
+	cat(query)
+	dbExecute(con, query)
+	
+	
+}

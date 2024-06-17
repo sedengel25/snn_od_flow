@@ -35,9 +35,9 @@ char_sql_filename <- paste0(char_network, ".sql")
 ################################################################################
 # 1. Create routable network from given region
 ################################################################################
-osmconvert_create_sub_osm_pbf()
-
-osm2po_create_routable_network()
+# osmconvert_create_sub_osm_pbf()
+#
+# osm2po_create_routable_network()
 
 ################################################################################
 # 2. Create local node distance matrix
@@ -46,12 +46,14 @@ sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
 
-int_buffer <- 500
+int_buffer <- 2000
 
 dt_dist_mat <- calc_local_node_dist_mat()
 
 write_rds(x = dt_dist_mat, file = paste0("./data/input/",
-																				 char_region_abb, 
+																				 char_region_abb,
+																				 "_",
+																				 int_buffer,
 																				 "_dist_mat.rds"))
 
 igraph_dist_mat <- dt_dist_mat %>%

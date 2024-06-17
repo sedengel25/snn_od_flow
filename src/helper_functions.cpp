@@ -1,4 +1,5 @@
 #include <Rcpp.h>
+#include <fstream>
 //#include <gperftools/heap-profiler.h>
 using namespace Rcpp;
 
@@ -24,11 +25,11 @@ std::map<int, std::pair<int, int>> create_network_map(DataFrame network) {
 	// Die einzelnen Spalten werden erst als einfache C++ Integer- und Numeric-Vektoren gespeichert. 
 // Dann werden "map" und "pair" kombiniert um für jedes node poir die entsprechende
 // Netzwerk-Distanz als double zu hinterlegen.
-std::map<std::pair<int, int>, double> create_dist_map(DataFrame dist_mat) {
+std::map<std::pair<int, int>, int> create_dist_map(DataFrame dist_mat) {
 	IntegerVector sources = dist_mat["source"];
 	IntegerVector targets = dist_mat["target"];
-	NumericVector m = dist_mat["m"];
-	std::map<std::pair<int, int>, double> dist_map;
+	IntegerVector m = dist_mat["m"];
+	std::map<std::pair<int, int>, int> dist_map;
 	for (int i = 0; i < sources.size(); i++) {
 		int min_idx = std::min(sources[i], targets[i]);
 		int max_idx = std::max(sources[i], targets[i]);
@@ -44,28 +45,78 @@ std::map<std::pair<int, int>, double> create_dist_map(DataFrame dist_mat) {
 // also it!=dist_map.end(), dann wird mit "second" auf das zweite Element des Paares
 // it zugegriffen, was der Distanz entspricht. Andernfalls, wenn für gegeben source
 // und target kein Eintrag gefunden wurde, dann wird -1 zurückgegeben
-double get_distance(const std::map<std::pair<int, int>, double>& dist_map, int source, int target) {
-	auto it = dist_map.find(std::make_pair(std::min(source, target), std::max(source, target)));
+double get_distance(const std::map<std::pair<int, int>, int>& dist_map, int source, int target) {
+	auto it = dist_map.find(std::make_pair(std::min(source, target), 
+                                        std::max(source, target)));
 	return (it != dist_map.end()) ? it->second : -1.0;
 }
 
+void printMemoryUsage(const std::string& note) {
+	std::ifstream file("/proc/self/status");
+	std::string line;
+	while (std::getline(file, line)) {
+		if (line.substr(0, 6) == "VmSize") {
+			Rcpp::Rcout << note << " " << line << "\n";
+			break;
+		}
+	}
+}
+
+
+template <typename T>
+void printVectorSize(const std::vector<T>& v, const std::string& name) {
+	Rcpp::Rcout << "Memory usage of " << name << ": " << (v.capacity() * sizeof(T)) / 1024.0 << " KB" << std::endl;
+}
+
+template <typename T>
+void printActualVectorSize(const std::vector<T>& v, const std::string& name) {
+	Rcpp::Rcout << "Actual memory usage of " << name << ": " 
+             << (v.size() * sizeof(T)) / 1024.0 << " KB" << std::endl;
+}
+
+// [[Rcpp::export]]
+void checkInput(DataFrame df) {
+	IntegerVector ids = df["id_new"];
+	Rcout << "Erste 10 'line_id' Werte: ";
+	for (int i = 0; i < 10; ++i) {
+		Rcout << ids[i] << " ";
+	}
+	Rcout << std::endl;
+	IntegerVector line_ids = df["id_edge"];
+	Rcout << "Erste 10 'line_id' Werte: ";
+	for (int i = 0; i < 10; ++i) {
+		Rcout << line_ids[i] << " ";
+	}
+	Rcout << std::endl;
+	IntegerVector starts = df["dist_to_start"];
+	Rcout << "Erste 10 'line_id' Werte: ";
+	for (int i = 0; i < 10; ++i) {
+		Rcout << starts[i] << " ";
+	}
+	Rcout << std::endl;
+	IntegerVector ends = df["dist_to_end"];
+	Rcout << "Erste 10 'line_id' Werte: ";
+	for (int i = 0; i < 10; ++i) {
+		Rcout << ends[i] << " ";
+	}
+	Rcout << std::endl;
+}
 
 // [[Rcpp::export]]
 DataFrame process_networks(DataFrame dt_od_pts_sub, 
 													 DataFrame dt_od_pts_full, 
 													 DataFrame dt_network, 
 													 DataFrame dt_dist_mat) {
-	//HeapProfilerStart("mein_heap_profile");
-	//R-dataframes in C++ -Vektoren zerlegen
+	
+	//Split R-dataframes in C++ vectors
 	IntegerVector od_pts_sub_id = dt_od_pts_sub["id_new"];
 	IntegerVector od_pts_sub_line_id = dt_od_pts_sub["id_edge"];
-	NumericVector od_pts_sub_start = dt_od_pts_sub["dist_to_start"];
-	NumericVector od_pts_sub_end = dt_od_pts_sub["dist_to_end"];
-	
+	IntegerVector od_pts_sub_start = dt_od_pts_sub["dist_to_start"];
+	IntegerVector od_pts_sub_end = dt_od_pts_sub["dist_to_end"];
 	IntegerVector od_pts_full_id = dt_od_pts_full["id_new"];
 	IntegerVector od_pts_full_line_id = dt_od_pts_full["id_edge"];
-	NumericVector od_pts_full_start = dt_od_pts_full["dist_to_start"];
-	NumericVector od_pts_full_end = dt_od_pts_full["dist_to_end"];
+	IntegerVector od_pts_full_start = dt_od_pts_full["dist_to_start"];
+	IntegerVector od_pts_full_end = dt_od_pts_full["dist_to_end"];
 	
 	auto network_map = create_network_map(dt_network);
 	auto dist_map = create_dist_map(dt_dist_mat);
@@ -75,63 +126,86 @@ DataFrame process_networks(DataFrame dt_od_pts_sub,
 	
 	std::vector<int> from_points;
 	std::vector<int> to_points;
-	std::vector<double> distances;
-	
+	std::vector<int> distances;
+	from_points.reserve(n_sub * 10); 
+	to_points.reserve(n_sub * 10);
+	distances.reserve(n_sub * 10);;
+
 	for (int i = 0; i < n_sub; ++i) {
+
 		int point_ij = od_pts_sub_id[i];
 		int line_ij = od_pts_sub_line_id[i];
-		double start_ij = od_pts_sub_start[i];
-		double end_ij = od_pts_sub_end[i];
+		int start_ij = od_pts_sub_start[i];
+		int end_ij = od_pts_sub_end[i];
+
 		
 		//if (network_map.find(line_ij) == network_map.end()) continue;
 		
 		int source_ij = network_map[line_ij].first;
 		int target_ij = network_map[line_ij].second;
+
 		
-		// Rcpp::Rcout << "From point: " << point_ij << std::endl;
+		// Rcpp::Rcout << "From point: " << i << std::endl;
 		
 		for (int j = i; j < n_full; ++j) {
 			int point_kl = od_pts_full_id[j];
+
 			int line_kl = od_pts_full_line_id[j];
-			double start_kl = od_pts_full_start[j];
-			double end_kl = od_pts_full_end[j];
+			int start_kl = od_pts_full_start[j];
+			int end_kl = od_pts_full_end[j];
 			
+			// Skip, if points considered are the same
 			if (point_ij == point_kl) continue;
 			
+			// Case: points are on the same line
 			if (network_map.find(line_ij) == network_map.find(line_kl)){
-				double om_on_distance_diff = start_kl - start_ij;
-				double om_on_distance = std::abs(om_on_distance_diff);  
+				int om_on_distance_diff = start_kl - start_ij;
+				int om_on_distance = std::abs(om_on_distance_diff);  
 				from_points.push_back(point_ij);
 				to_points.push_back(point_kl);
 				distances.push_back(om_on_distance);
 				continue;
 			};
+
 			
-			
+			// Case: points are on different lines
 			int source_kl = network_map[line_kl].first;
 			int target_kl = network_map[line_kl].second;
-			
-			double nd_ik = get_distance(dist_map, source_ij, source_kl);
-			double nd_jl = get_distance(dist_map, target_ij, target_kl);
-			double nd_il = get_distance(dist_map, source_ij, target_kl);
-			double nd_jk = get_distance(dist_map, source_kl, target_ij);
-			
-			if (nd_ik == -1.0 || nd_jl == -1.0 || nd_il == -1.0 || nd_jk == -1.0) continue;
-			
-			double om_on_distance = std::min({
+			int nd_ik = get_distance(dist_map, source_ij, source_kl);
+			int nd_jl = get_distance(dist_map, target_ij, target_kl);
+			int nd_il = get_distance(dist_map, source_ij, target_kl);
+			int nd_jk = get_distance(dist_map, source_kl, target_ij);
+
+			// If one of the points involved lies on 
+			if (nd_ik == -1.0 || 
+          nd_jl == -1.0 || 
+          nd_il == -1.0 || 
+          nd_jk == -1.0) continue;
+
+			int om_on_distance = std::min({
 				start_ij + start_kl + nd_ik,
 				end_ij + end_kl + nd_jl,
 				start_ij + end_kl + nd_il,
 				end_ij + start_kl + nd_jk
 			});
+
 			
 			from_points.push_back(point_ij);
 			to_points.push_back(point_kl);
 			distances.push_back(om_on_distance);
+
 			
 		}
+		if (i % 100 == 0) {  
+			printVectorSize(from_points, "from_points during");
+			printVectorSize(to_points, "to_points during");
+			printVectorSize(distances, "distances during");
+			printActualVectorSize(from_points, "from_points during");
+			printActualVectorSize(to_points, "to_points during");
+			printActualVectorSize(distances, "distances during");
+		}
+		
 	}
-	//HeapProfilerStop();
 	return DataFrame::create(Named("from") = from_points, 
 													 Named("to") = to_points, 
 													 Named("distance") = distances);

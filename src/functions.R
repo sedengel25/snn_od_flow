@@ -136,17 +136,19 @@ calc_local_node_dist_mat <- function() {
 	# Initiate the environment
 	reticulate::py_install("networkx", 
 												 envname = "r-reticulate", 
-												 method = "virtualenv")
-	
-	
-	reticulate::py_install("numpy", 
+												 method = "virtualenv",
+												 pip = TRUE)
+
+	reticulate::py_install("numpy==1.26.00", 
 												 envname = "r-reticulate", 
-												 method = "virtualenv")
+												 method = "virtualenv",
+												 pip = TRUE)
 	reticulate::use_virtualenv("r-reticulate", required = TRUE)
 	nx <- reticulate::import("networkx")
 	np <- reticulate::import("numpy")
 	
-	
+	config <- py_config()
+	config$numpy
 	# Create a graph from the sub street network
 	g <- nx$from_pandas_edgelist(df = sf_network,
 															 source = "source",

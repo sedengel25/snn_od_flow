@@ -12,8 +12,11 @@ library(sf)
 library(reticulate)
 library(data.table)
 library(Rcpp)
+library(RcppParallel)
 library(readr)
 library(lubridate)
+library(profvis)
+library(bit64)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -24,6 +27,9 @@ pw <- config$psql_db$password
 dbname <- config$psql_db$dbname
 port <- config$psql_db$port
 
+
+
+
 if(!exists("con")){
 	con <- dbConnect(RPostgres::Postgres(), 
 									 dbname = dbname, 
@@ -32,7 +38,9 @@ if(!exists("con")){
 									 password = pw,
 									 port = port,
 									 options="-c client_min_messages=warning")
+	print("Connection to PostgreSQL-DB establised")
 }
+
 
 
 char_os <-   Sys.info()["sysname"] %>% as.character()
