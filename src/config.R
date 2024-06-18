@@ -17,6 +17,7 @@ library(readr)
 library(lubridate)
 library(profvis)
 library(bit64)
+library(ggplot2)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

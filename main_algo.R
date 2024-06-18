@@ -74,8 +74,7 @@ dt_origin <- dbReadTable(con, "mapped_points") %>%
 	rename("dist_to_start" = "o_dist_to_start",
 				 "dist_to_end" = "o_dist_to_end"
 	) %>%
-	mutate(#id_new = bit64::as.integer64(id_new),
-		id_edge = as.numeric(id_edge),
+	mutate(id_edge = as.integer(id_edge),
 				 dist_to_start = round(dist_to_start) %>% as.integer,
 				 dist_to_end = round(dist_to_end) %>% as.integer) %>%
 	as.data.table
@@ -89,7 +88,8 @@ dt_dest <- dbReadTable(con, "mapped_points") %>%
 	rename("dist_to_start" = "d_dist_to_start",
 				 "dist_to_end" = "d_dist_to_end"
 	) %>%
-	mutate(dist_to_start = round(dist_to_start) %>% as.integer,
+	mutate(id_edge = as.integer(id_edge),
+				 dist_to_start = round(dist_to_start) %>% as.integer,
 				 dist_to_end = round(dist_to_end) %>% as.integer) %>%
 	as.data.table
 
@@ -103,34 +103,18 @@ int_n_od_pts <- nrow(dt_origin)
 
 int_chunks <- r1_create_chunks(cores = int_cores, n = int_n_od_pts)
 
-id_start <- 1
-id_end <- 500
-p1 <- proc.time()
 
-str(dt_origin)
-checkInput(dt_origin)
-# result <- process_networks_parallel(dt_origin[id_start:id_end,],
-# 													dt_origin,
-# 													dt_network,
-# 													dt_dist_mat)
+################################################################################
+# PSQL-based nd calculation
+################################################################################
+query <- paste0("DROP TABLE IF EXISTS ", "origin_pts_nd")
+dbExecute(con, query)
 
-result2 <- process_networks(dt_origin[id_start:id_end,],
-														 dt_origin,
-														 dt_network,
-														 dt_dist_mat)
-p2 <- proc.time()
-print(p2-p1)
+query <- paste0("CREATE TABLE ", "origin_pts_nd",
+								" (o_m INTEGER, o_n INTEGER, nd FLOAT);")
+dbExecute(con, query)
 
-result2 %>%
-	filter(from == 1)
-# query <- paste0("DROP TABLE IF EXISTS ", "origin_pts_nd")
-# dbExecute(con, query)
-# 
-# query <- paste0("CREATE TABLE ", "origin_pts_nd", 
-# 								" (o_m INTEGER, o_n INTEGER, nd FLOAT);")
-# dbExecute(con, query)		
-# 
-# p3 <- proc.time()
+# p1 <- proc.time()
 # psql1_calc_nd_diff_roads(con = con,
 # 												 table_pts = "origin_pts",
 # 												 table_network = char_network,
@@ -138,31 +122,49 @@ result2 %>%
 # 												 table_nd = "origin_pts_nd",
 # 												 id_start = id_start,
 # 												 id_end = id_end)
-# p4 <- proc.time()
-# print(p4-p3)
-# parallel::mclapply(1:length(chunks), function(i) {
-# 	id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
-# 	id_end <- chunks[i]
-# 	
-# 	psql1_calc_nd_diff_roads(con = con,
-# 													 table_pts = "origin_pts",
-# 													 table_network = char_network,
-# 													 table_dist_mat = "dist_mat_test",
-# 													 table_nd = "origin_pts_nd",
-# 													 id_start = id_start,
-# 													 id_end = id_end)
-# }, mc.cores = cores)
+# p2 <- proc.time()
+# print(p2-p1)
 
+p1 <- proc.time()
+parallel::mclapply(1:length(int_chunks), function(i) {
+	id_start <- ifelse(i == 1, 1, int_chunks[i - 1] + 1)
+	id_end <- int_chunks[i]
+
+	psql1_calc_nd_diff_roads(con = con,
+													 table_pts = "origin_pts",
+													 table_network = char_network,
+													 table_dist_mat = "dist_mat_test",
+													 table_nd = "origin_pts_nd",
+													 id_start = id_start,
+													 id_end = id_end)
+}, mc.cores = int_cores)
+p2 <- proc.time()
+print(p2-p1)
+################################################################################
+# RCPP based nd calculation
+################################################################################
 # p1 <- proc.time()
-# dt_o_pts_nd <- parallel::mclapply(1:length(int_chunks), function(i) {
-# 	id_start <- ifelse(i == 1, 1, int_chunks[i - 1] + 1)
-# 	id_end <- int_chunks[i]
-# 
-# 	cat("From ", id_start, " to ", id_end, "\n")
-# 
-# 	process_networks(dt_od_pts_sub = dt_origin[id_start:id_end,],
-# 									 dt_od_pts_full = dt_origin,
-# 									 dt_network = dt_network,
-# 									 dt_dist_mat = dt_dist_mat)
-# 
-# }, mc.cores = int_cores)
+# process_networks(dt_od_pts_sub = dt_origin[id_start:id_end,],
+# 								 dt_od_pts_full = dt_origin,
+# 								 dt_network = dt_network,
+# 								 dt_dist_mat = dt_dist_mat)
+# p2 <- proc.time()
+# print(p2-p1)
+
+
+
+p1 <- proc.time()
+dt_o_pts_nd <- parallel::mclapply(1:length(int_chunks), function(i) {
+	id_start <- ifelse(i == 1, 1, int_chunks[i - 1] + 1)
+	id_end <- int_chunks[i]
+
+	cat("From ", id_start, " to ", id_end, "\n")
+
+	process_networks(dt_od_pts_sub = dt_origin[id_start:id_end,],
+									 dt_od_pts_full = dt_origin,
+									 dt_network = dt_network,
+									 dt_dist_mat = dt_dist_mat)
+
+}, mc.cores = int_cores)
+p2 <- proc.time()
+print(p2-p1)
