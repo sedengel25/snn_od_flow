@@ -6,6 +6,7 @@ library(cluster)
 library(mclust)
 library(lwgeom)
 library(plotly)
+library(GGally)
 source("./src/config.R")
 source("./src/functions.R")
 
@@ -26,10 +27,10 @@ analyze_linestrings <- function(data, cluster_id) {
 			lwgeom::st_endpoint() %>%
 			sf::st_coordinates()
 		
-		var_start <- var(start_coords)
-		var_end <- var(end_coords)
-		min_var <- min(var_start, var_end)
-		max_var <- max(var_start, var_end)
+		start_wcss = kmeans(start_coords, centers = 1)$tot.withinss
+		end_wcss = kmeans(end_coords, centers = 1)$tot.withinss
+		max_var = max(start_wcss, end_wcss)
+		min_var = min(start_wcss, end_wcss)
 		ratio_var <- abs(max_var/min_var)
 		
 
@@ -67,6 +68,10 @@ analyze_linestrings <- function(data, cluster_id) {
 		convex_hull <- st_convex_hull(all_geom)
 		size <- st_area(convex_hull) %>% as.numeric
 		size_norm <- size/num_linestrings
+		ratio_var_norm <- ratio_var*num_linestrings
+		
+		intersection_matrix <- st_intersects(cluster_data, sparse = FALSE)
+		intersection_count <- sum(intersection_matrix) - nrow(linestrings) 
 		
 		return(data.frame(cluster_id = cluster_id, 
 											mean_direction = mean_direction, 
@@ -80,7 +85,9 @@ analyze_linestrings <- function(data, cluster_id) {
 											min_var = min_var,
 											max_var = max_var,
 											ratio_var = ratio_var,
-											size_norm = size_norm))
+											size_norm = size_norm,
+											ratio_var_norm = ratio_var_norm,
+											intersection_count = intersection_count))
 	} else {
 		return(data.frame(cluster_id = cluster_id, 
 											mean_direction = NA, 
@@ -94,7 +101,9 @@ analyze_linestrings <- function(data, cluster_id) {
 											min_var = NA,
 											max_var = NA,
 											ratio_var = NA,
-											size_norm = NA))
+											size_norm = NA,
+											ratio_var_norm = NA,
+											intersection_count = NA))
 	}
 }
 
@@ -109,8 +118,10 @@ results_df <- data.frame(cluster_id = integer(),
 												 var_length = numeric(),
 												 min_var = numeric(),
 												 max_var = numeric(),
-												 raio_var = numeric(),
-												 size_norm = numeric())
+												 ratio_var = numeric(),
+												 ratio_var_norm = numeric(),
+												 size_norm = numeric(),
+												 intersection_count = integer())
 
 sf_cluster <- st_read(con, 
 											"cologne_voi_m06_d05_weekday_h17_18_5000_16_cluster_cleaned")
@@ -122,12 +133,20 @@ for (cluster_id in unique_clusters) {
 
 results_df <- results_df %>%
 	filter(cluster_id != 0) %>%
+	mutate(circ_var_norm = circ_var/num_linestrings)
+
+circ_var_df <- results_df %>%
+	filter(cluster_id != 0) %>%
 	mutate(circ_var_norm = circ_var/num_linestrings) %>%
-	arrange(circ_var_norm)
+	arrange(circ_var)
+
+ratio_var_df <- results_df %>%
+	filter(cluster_id != 0) %>%
+	arrange(desc(ratio_var))
 
 
 
-# ggplot(data = results_df, 
+# ggplot(data = circ_var_df,
 # 			 aes(x = reorder(cluster_id, circ_var), y = circ_var)) +
 # 	geom_line(aes(group = 1)) +
 # 	geom_point() +
@@ -142,15 +161,17 @@ final_df <- results_df %>%
 		# 		 mean_resultant_length,
 		#		 circ_var,
 				 circ_var_norm,
-				 num_linestrings,
+				 # num_linestrings,
 				 # min_length,
 				 # max_length,
-				 mean_length,
+				 # mean_length,
 				 # var_length,
-				 min_var,
-				 size_norm
+				 # min_var,
+				 # size_norm,
 				 # max_var,
-				 # ratio_var
+				 # ratio_var,
+				 ratio_var_norm,
+				 intersection_count
 				 )
 
 final_df_norm <- final_df[,-1] %>% 
@@ -158,41 +179,86 @@ final_df_norm <- final_df[,-1] %>%
 								.fns = ~scale(.x, center = TRUE, scale = TRUE)))
 
 
-###K-mean
+###K-means
 set.seed(42)  
-k <- 4
+k <- 7
 kmeans_result <- kmeans(final_df_norm, centers = k)
 
 final_df$cluster <- as.factor(kmeans_result$cluster)
 
 
+# ggpairs(final_df, aes(color = factor(cluster)), 
+# 				columns = c("circ_var_norm", 
+# 										"mean_length", 
+# 										"size_norm", 
+# 										"ratio_var_norm",
+# 										"intersection_count"),
+# 				title = "Pairwise Plot Matrix")
+
+# ggplot(data = final_df, 
+# 			 aes(x = reorder(cluster_id, circ_var_norm), 
+# 			 		y = circ_var_norm, 
+# 			 		color = as.factor(cluster))) +
+# 	geom_point(size = 2) +  # Zeichnet größere Punkte für jede Beobachtung
+# 	labs(x = "Cluster ID", y = "Circular Variance",
+# 			 title = "Circular Variance of Line Angles by Cluster ID",
+# 			 color = "Cluster") +
+# 	theme_minimal() +
+# 	theme(legend.position = "right")
 
 
-ggplot(data = final_df, 
-			 aes(x = reorder(cluster_id, circ_var_norm), 
-			 		y = circ_var_norm, 
-			 		color = as.factor(cluster))) +
-	geom_point(size = 2) +  # Zeichnet größere Punkte für jede Beobachtung
-	labs(x = "Cluster ID", y = "Circular Variance",
-			 title = "Circular Variance of Line Angles by Cluster ID",
-			 color = "Cluster") +
-	theme_minimal() +
-	theme(legend.position = "right")
+# ggplot(data = final_df, aes(x = circ_var_norm,
+# 														y = ratio_var_norm,
+# 														color = cluster)) +
+# 	geom_point()
+
+x_var <- "circ_var_norm"
+y_var <- "ratio_var_norm"
+z_var <- "intersection_count"
 
 
-ggplot(data = final_df, aes(x = circ_var_norm, y = mean_length, color = cluster)) +
-	geom_point()
-
-plot_ly(data = final_df, type = "scatter3d", mode = "markers",
-				x = ~circ_var_norm, y = ~mean_length, z = ~size_norm,
+plot_ly(data = final_df, type = "scatter3d", mode = "markers+text",
+				x = as.formula(paste("~", x_var)), 
+				y = as.formula(paste("~", y_var)), 
+				z = as.formula(paste("~", z_var)),
 				color = ~factor(cluster),
-				marker = list(size = 5, opacity = 0.8)) %>%
+				text = ~cluster_id,  
+				marker = list(size = 5, opacity = 0.8),
+				textposition = "top center") %>%  
 	layout(title = "3D Plot of Clusters",
-				 scene = list(xaxis = list(title = "Circular Variance"),
-				 						 yaxis = list(title = "Mean Length"),
-				 						 zaxis = list(title = "Size norm")))
+				 scene = list(xaxis = list(title = x_var),
+				 						 yaxis = list(title = y_var),
+				 						 zaxis = list(title = z_var)))
 
 
+cluster_df <- final_df %>%
+	filter(cluster == 3)
+cluster_df_norm <- cluster_df[,-c(1,5)] %>% 
+	mutate(across(.cols = everything(), 
+								.fns = ~scale(.x, center = TRUE, scale = TRUE)))
+
+set.seed(42)  
+k <- 3
+kmeans_result <- kmeans(cluster_df_norm, centers = k)
+
+cluster_df$cluster <- as.factor(kmeans_result$cluster)
+
+x_var <- "circ_var_norm"
+y_var <- "ratio_var_norm"
+z_var <- "size_norm"
+
+plot_ly(data = cluster_df, type = "scatter3d", mode = "markers+text",
+				x = as.formula(paste("~", x_var)), 
+				y = as.formula(paste("~", y_var)), 
+				z = as.formula(paste("~", z_var)),
+				color = ~factor(cluster),
+				text = ~cluster_id,  
+				marker = list(size = 5, opacity = 0.8),
+				textposition = "top center") %>%  
+	layout(title = "3D Plot of Clusters",
+				 scene = list(xaxis = list(title = x_var),
+				 						 yaxis = list(title = y_var),
+				 						 zaxis = list(title = z_var)))
 # ###GMM
 # model <- Mclust(as.matrix(final_df_norm))
 # summary(model)
@@ -234,4 +300,4 @@ head(results_df,50)
 tail(results_df,50)
 
 
-
+linestrings <- sf_cluster[sf_cluster$cluster_id_final==5,]
