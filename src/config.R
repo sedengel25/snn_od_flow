@@ -18,6 +18,7 @@ library(lubridate)
 library(profvis)
 library(bit64)
 library(ggplot2)
+library(lwgeom)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

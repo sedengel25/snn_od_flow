@@ -1,6 +1,6 @@
 library(sf)
 library(ggplot2)
-
+library(readr)
 
 create_ellipse <- function(bbox, width_m, height_m, crs_proj) {
 
@@ -34,90 +34,155 @@ create_ellipse <- function(bbox, width_m, height_m, crs_proj) {
 	return(ellipse_sf)
 }
 
-# Funktion zur Erzeugung von Punkten innerhalb der Ellipse
+
 sample_points_in_ellipse <- function(ellipse_sf, n) {
 	points <- st_sample(ellipse_sf, size = n, type = "random")
 	return(points)
 }
 
-# Funktion zum Zeichnen von Linien von diesen Punkten
-generate_lines_from_points <- function(points, base_length_flows, variance_length_flows, variance_angles) {
+
+generate_lines_from_points <- function(points, 
+																			 base_length_flows, 
+																			 variance_length_flows, 
+																			 variance_angles) {
 	lines <- vector("list", length(points))
+	flow_ids <- vector("integer", length(points))
 	
-	# Basiswinkel zufällig wählen, dann geringe Variation für jeden Punkt
+	# Select random base angle
 	base_angle <- runif(1, 0, 2 * pi)
 	
+	
+	# Create lines based on a...
 	for (i in seq_along(points)) {
-		angle <- base_angle + rnorm(1, sd = variance_angles)  # Winkelvariation
-		length <- base_length_flows + rnorm(1, sd = variance_length_flows)  # Längenvariation
+		# ...angle that slightly differs from the base angle based on "variance_angles"...
+		angle <- base_angle + rnorm(1, sd = variance_angles)
+		
+		# and a length that slightly differs from the base length based on "variance_length_flows".
+		length <- base_length_flows + runif(1, 
+																				min = -variance_length_flows,
+																				max = variance_length_flows)
+		
 		end_point <- st_coordinates(points[i]) + c(length * cos(angle), length * sin(angle))
 		lines[[i]] <- st_sfc(st_linestring(matrix(c(st_coordinates(points[i]), end_point), ncol = 2, byrow = TRUE)), crs = st_crs(points))
+		flow_ids[i] <- i
 	}
 	sf_lines <- do.call(rbind, lines) %>% st_sfc
 	sf_lines <- st_set_crs(sf_lines, 32632)
 	return(sf_lines)
 }
 
+
 generate_clusters_sf <- function(num_clusters, bbox, crs_proj) {
 	all_ellipses <- list()
 	all_points <- list()
 	all_lines <- list()
+	all_cluster_ids <- list()
 	
 	for (i in 1:num_clusters) {
-		# Zufällige Parameterwerte für jedes Cluster
 		width_m <- sample(500:1500, 1)
 		height_m <- sample(250:750, 1)
-		n_points <- sample(4:45, 1)
-		base_length_flows <- sample(1000:2000, 1)
+		n_points <- sample(3:50, 1)
+		base_length_flows <- sample(500:2500, 1)
 		variance_length_flows <- runif(1, 10, 50)
-		variance_angles <- runif(1, 0, 0.3)
+		variance_angles <- runif(1, 0, 0.4)
 		
-		# Erzeuge die Ellipse und sample Punkte
 		sf_ellipse <- create_ellipse(bbox, width_m, height_m, crs_proj)
 		sf_points <- sample_points_in_ellipse(sf_ellipse, n_points)
 		sf_lines <- generate_lines_from_points(sf_points, base_length_flows, variance_length_flows, variance_angles)
-		
-		# Sammle Geometrien in Listen
-		all_ellipses[[i]] <- sf_ellipse
-		all_points[[i]] <- sf_points
+	
 		all_lines[[i]] <- sf_lines
+		all_cluster_ids[[i]] <- rep(i, n_points)
 	}
 	
-	# Kombiniere alle gesammelten Geometrien
-	combined_ellipses <- do.call(rbind, all_ellipses)
-	combined_points <- do.call(rbind, all_points)
 	combined_lines <- do.call(rbind, all_lines)
-	
-	# Rückgabe als Liste von sf-Objekten
-	return(list(ellipses = combined_ellipses, points = combined_points, lines = combined_lines))
+	combined_cluster_ids <- unlist(all_cluster_ids) 
+
+	matrix_final <- cbind(combined_lines, combined_cluster_ids)
+
+	colnames(matrix_final) <- c("geometry", "cluster_id")
+	sf_final <- st_as_sf(data.frame(matrix_final), sf_column_name = "geometry")
+	sf_final <- st_set_crs(sf_final, 32632)
+	sf_final$cluster_id <- unlist(sf_final$cluster_id)
+	return(sf_final)
 }
 
+generate_noise_points <- function(bbox, n) {
+
+	x_coords <- runif(n, min = bbox["xmin"], max = bbox["xmax"])
+	y_coords <- runif(n, min = bbox["ymin"], max = bbox["ymax"])
+	points <- cbind(x_coords, y_coords)
+	
+	points_sf <- st_as_sf(data.frame(x = x_coords, y = y_coords), 
+												coords = c("x", "y"), crs = st_crs(bbox))
+	return(points_sf)
+}
+
+
+generate_noise_lines <- function(points, min_length, max_length) {
+	lines <- vector("list", nrow(points))
+	
+	for (i in 1:nrow(points)) {
+		angle <- runif(1, 0, 2 * pi)  
+		length <- runif(1, min_length, max_length)
+		start_point <- st_coordinates(points[i,])
+		end_point <- c(start_point[1] + length * cos(angle), start_point[2] + length * sin(angle))
+		
+		lines[[i]] <- st_sfc(st_linestring(matrix(c(start_point, end_point), ncol = 2, byrow = TRUE)), crs = st_crs(points))
+	}
+	sf_lines <- do.call(rbind, lines) %>% st_sfc
+	sf_lines <- st_sf(geometry = sf_lines, cluster_id = rep(0, length(lines)))
+	sf_lines <- st_set_crs(sf_lines, st_crs(points))
+	return(sf_lines)
+}
+
+
 crs_proj <- 32632
-bbox <- st_bbox(c(xmin = 343914.7, ymin = 5632759, xmax = 370674.3, ymax = 5661475), crs = crs_proj)
-cluster_plots <- generate_clusters_sf(30, bbox, crs_proj)
 
-sf_clusters <- cluster_plots$lines %>% st_as_sfc()
+xmin <- 343914.7
+xmax <- 370674.3
+ymin <- 5632759
+ymax <- 5661475
 
-plot(sf_clusters)
+x_center <- (xmin + xmax) / 2
+y_center <- (ymin + ymax) / 2
 
-# sf_ellipse <- create_ellipse(bbox, 1000, 500, crs_proj)
-# 
-# sf_points <- sample_points_in_ellipse(sf_ellipse, 50) 
-# sf_lines <- generate_lines_from_points(sf_points, 
-# 																		base_length_flows = 1500, 
-# 																		variance_length_flows = 0, 
-# 																		variance_angles = 0.0)
-# 
-# ggplot() +
-# 	geom_sf(data = st_as_sfc(bbox, crs = crs_proj), fill = "transparent", color = "black") +
-# 	geom_sf(data = sf_ellipse, fill = "blue", alpha = 0.5) +
-# 	geom_sf(data = sf_points, size = 0.1) +
-# 	geom_sf(data = sf_lines)
+width_reduction <- (xmax - xmin) * 0.15
+height_reduction <- (ymax - ymin) * 0.15
+
+new_xmin <- x_center - width_reduction
+new_xmax <- x_center + width_reduction
+new_ymin <- y_center - height_reduction
+new_ymax <- y_center + height_reduction
+
+bbox <- st_bbox(c(xmin = new_xmin, 
+									ymin = new_ymin, 
+									xmax = new_xmax, 
+									ymax = new_ymax), crs = crs_proj)
+n_clusters <- 12
+sf_synth_clusters <- generate_clusters_sf(n_clusters, bbox, crs_proj)
+
+n_noise_points <- 2000
+min_length <- 100      
+max_length <- 2000
 
 
-# Variables:
-# - ellipse shape (width_m, height_m)
-# - number of sampled points in shape (n)
-# - base length of flows (base_length_flows)
-# - variance of flow length (variance_length_flows)
-# - variance of angles (variance_angles)
+noise_points <- generate_noise_points(bbox, n_noise_points)
+
+noise_lines <- generate_noise_lines(noise_points, min_length, max_length)
+
+
+sf_synth_clusters <- rbind(sf_synth_clusters, noise_lines)
+sf_synth_clusters$flow_id <- 1:nrow(sf_synth_clusters) 
+
+colors <- c(rgb(211/255, 211/255, 211/255, 0.5), rainbow(n_clusters))
+names(colors) <- c("0", as.character(1:n_clusters))
+
+
+ggplot(data = sf_synth_clusters) +
+	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
+	scale_color_manual(values = colors) +
+	theme_minimal() +
+	labs(color = "Cluster ID")
+
+filename <- paste0(n_clusters, "_", n_noise_points, ".rds")
+write_rds(sf_synth_clusters, here::here("./data/synthetic/", filename))

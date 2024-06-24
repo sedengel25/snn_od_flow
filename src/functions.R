@@ -1,7 +1,9 @@
 source("./src/utils/cmd.R")
 source("./src/utils/psql_1.R")
 source("./src/utils/psql_2.R")
-source("./src/utils/r1.R")
+source("./src/utils/r_1.R")
+source("./src/utils/r_2.R")
+
 
 # Documentation: osmconvert_create_sub_osm_pbf
 # Usage: osmconvert_create_sub_osm_pbf()
@@ -180,4 +182,89 @@ calc_local_node_dist_mat <- function() {
 	
 	dt_dist_mat <- rbindlist(list_dt)
 }
+
+
+
+plot_optimal_k <- function(k_max) {
+	
+	
+	matrix_knn_dist <- t(apply(matrix_distances, 1, r1_get_knn_dist, k_max))
+	
+	dt_rkd <- r1_create_rkd_dt(k_max = k_max, matrix_knn_dist)
+	
+	plot <- ggplot(data = dt_rkd, aes(x = k, y = rkd)) +
+		geom_point() +
+		geom_line() +
+		labs(x = "k",
+				 y = "RKD") +
+		theme_minimal(base_size = 40) +
+		theme(axis.text.x = element_text(hjust = 0.5), 
+					axis.title.x = element_text(margin = margin(t = 15)),
+					axis.text.y = element_text(hjust = 0.5), 
+					axis.title.y = element_text(margin = margin(r = 15)))
+	
+	
+	return(plot)
+}
+
+
+
+calc_geom_dist_mat <- function(sf_data) {
+	# Extract origin- and destination-geoemtry from linestrings
+	sf_data$origin <- lwgeom::st_startpoint(sf_data$geometry)
+	sf_data$dest <- lwgeom::st_endpoint(sf_data$geometry)
+	
+	# Get distances between origin- and destination points...
+	origin_distances <- st_distance(sf_data$origin, by_element = FALSE)
+	dest_distances <- st_distance(sf_data$dest, by_element = FALSE)
+	
+	# ...in order to calculate a distance matrix for the flow
+	dist_mat <- drop_units(origin_distances + dest_distances) %>%
+		rescale(to = c(0,3))
+	
+	
+	# Calculate angles for each flow
+	angles <- sapply(st_geometry(sf_data), function(line) {
+		coords <- st_coordinates(line)
+		angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
+		ifelse(angle < 0, angle + 360, angle)
+	})
+	
+	# Calculate a matrix containing the differences in angles
+	angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
+		rescale(to = c(0, 1))
+	# Calculate the lengths of all flows
+	lengths <- sapply(st_geometry(sf_data), function(line) {
+		length <- st_length(line)
+	})
+	
+	# Calculate a matrix containing the differences in lengths
+	length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
+		rescale(to = c(0, 2))
+	
+	# Combine all the matrices into one
+	final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat
+	
+	return(final_dist_mat)
+}
+
+calc_geom_sil_score <- function(sf_data) {
+
+	final_dist_mat <- calc_geom_dist_mat(sf_data)
+	
+	
+	# Calcualte silhoutte scores
+	df_sil_scores <- cluster::silhouette(sf_data$cluster_id, final_dist_mat) %>% 
+		as.data.frame() 
+	
+	
+	df_sil_scores <- df_sil_scores %>%
+		mutate(flow_id = 1:nrow(df_sil_scores))
+	
+	average_sil_score <- mean(df_sil_scores[, 3])
+	return(average_sil_score)
+}
+
+
+
 
