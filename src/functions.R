@@ -220,7 +220,7 @@ calc_geom_dist_mat <- function(sf_data) {
 	
 	# ...in order to calculate a distance matrix for the flow
 	dist_mat <- drop_units(origin_distances + dest_distances) %>%
-		rescale(to = c(0,3))
+		rescale(to = c(0,2))
 	
 	
 	# Calculate angles for each flow
@@ -240,7 +240,7 @@ calc_geom_dist_mat <- function(sf_data) {
 	
 	# Calculate a matrix containing the differences in lengths
 	length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
-		rescale(to = c(0, 2))
+		rescale(to = c(0, 1))
 	
 	# Combine all the matrices into one
 	final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat

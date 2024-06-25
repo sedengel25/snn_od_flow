@@ -162,7 +162,7 @@ n_clusters <- 12
 sf_synth_clusters <- generate_clusters_sf(n_clusters, bbox, crs_proj)
 
 n_noise_points <- 2000
-min_length <- 100      
+min_length <- 500    
 max_length <- 2000
 
 

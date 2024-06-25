@@ -3,9 +3,11 @@ source("./src/functions.R")
 library(units)
 library(scales)
 library(dbscan)
-
+library(fpc)
 # Read in synthetic dataset 
 sf_org <- read_rds("./data/synthetic/12_2000.rds")
+sf_org$length <- st_length(sf_org$geometry) %>% as.numeric
+
 sf_org$origin <- lwgeom::st_startpoint(sf_org$geometry)
 sf_org$dest <- lwgeom::st_endpoint(sf_org$geometry)
 sf_origin_distances <- st_distance(sf_org$origin, by_element = FALSE) 
@@ -24,7 +26,7 @@ int_k_max <- 50
 plot_optimal_k(k_max = int_k_max)
 
 
-int_k <- 16
+int_k <- 20
 
 matrix_knn_ind <- t(apply(matrix_distances, 1, r1_get_knn_ind, int_k_max))
 
@@ -43,8 +45,10 @@ set.seed(123)
 clusters <- sNNclust(snn_matrix, 
 										 k = int_k, 
 										 eps = round(int_k*0.75),
-										 minPts = 13,
+										 minPts = 15,
 										 borderPoints = TRUE)
+
+
 df_cluster <- data.frame(
 	flow_id = 1:length(clusters$cluster),
 	cluster_id = clusters$cluster)
@@ -73,3 +77,20 @@ ggplot(data = sf_snn[sf_snn$cluster_id!=0,]) +
 # 	theme_void()
 # 
 table(sf_snn$cluster_id)
+
+### CDBW ---------------------------------------------------
+df_cdbw <- sf_org %>%
+	mutate(start_point = st_coordinates(origin),
+				 end_point = st_coordinates(dest))
+
+df_cdbw <- data.frame(
+	start_x = df_cdbw$start_point[, "X"],
+	start_y = df_cdbw$start_point[, "Y"],
+	end_x = df_cdbw$end_point[, "X"],
+	end_y = df_cdbw$end_point[, "Y"],
+	cluster = df_cdbw$cluster_id
+)
+
+fpc::cdbw(df_cdbw[,1:4], df_cdbw[,5])
+
+
