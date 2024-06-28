@@ -1,28 +1,9 @@
 source("./src/config.R")
-#source("./src/functions.R")
 library(sfnetworks)
 library(osmdata)
 library(tidygraph)
 
 
-# Documentation: extract_linestrings
-# Usage: extract_linestrings(geometry)
-# Description: Is applied to each row of a sfc-object. If it contains a MLS,
-	# each element of the MLS is extracted and converted into a LS
-# Args/Options: geometry
-# Returns: list
-# Output: ...
-# Action: ...
-# extract_linestrings <- function(geometry) {
-# 	if (st_is_empty(geometry)) {
-# 		return(NULL)  # Return NULL for NA geometries
-# 	} else if (st_geometry_type(geometry) == "MULTILINESTRING") {
-# 		# Extract each LINESTRING manually from MULTILINESTRING
-# 		return(lapply(1:length(geometry), function(i) st_linestring(geometry[[i]])))
-# 	} else {
-# 		return(list(geometry))  # Return the geometry if it is not a MULTILINESTRING
-# 	}
-# }
 
 # Documentation: get_line_ids_of_mapped_points
 # Usage: get_line_ids_of_mapped_points(sf_points, sf_roads)
@@ -75,6 +56,7 @@ create_ellipse_with_points <- function(sf_network,
 																			 n) {
 
 
+	# Draw the ellipse with 'num_points'
 	num_points <- 100
 	angles <- seq(0, 2 * pi, length.out = num_points)
 	unit_circle <- cbind(cos(angles), sin(angles))
@@ -87,25 +69,15 @@ create_ellipse_with_points <- function(sf_network,
 	sf_ellipse <- st_sfc(ellipse_polygon, crs = st_crs(sf_network))
 	
 	# Get road segments lying within the ellipse
-	# sf_roads <- st_intersection(sf_network, sf_ellipse)
-	# sf_roads$type <- sapply(sf_roads$geom_way, st_geometry_type)
-	# if(length(unique(sf_roads$type))>1){
-	# 	print(ggplot(data = sf_roads) +
-	# 					geom_sf(aes(color = type), size = 0.7) +  # Farbe basierend auf dem Typ der Geometrie
-	# 					labs(color = "Geometry Type") +           # Legende beschriften
-	# 					theme_minimal()) 
-	# }
-	# 
-	# # Apply 'extract_lienstrings()' since some segments are multilinestrings
-	# list_sf_linestrings <- do.call(c, lapply(sf_roads$geom_way, extract_linestrings))
-	# sf_roads_cast <- st_sfc(list_sf_linestrings, crs = st_crs(sf_roads)) %>% st_as_sf()
-
-	
-	# After performing the intersection
 	sf_roads <- st_intersection(sf_network, sf_ellipse)
 
+	
+	# After performing the intersection, geometries such as MULTILINESTRING are removed,...
+	#...which is totally fine since there are only few cases where MULTILINESTRINGS...
+	#...
 	sf_roads <- sf_roads %>%
 		filter(st_geometry_type(geom_way) == "LINESTRING")
+	
 	# Ensure that linestrings are connected so network distance between points is low
 	sf_net_small <- as_sfnetwork(sf_roads, directed = FALSE)
 	# Get the components of the created networf
@@ -150,7 +122,14 @@ create_sorted_linestrings <- function(start_points, end_points) {
 	st_sf(geometry = st_sfc(linestrings), crs = st_crs(start_points))
 }
 
-
+# Documentation: generate_noise_points
+# Usage: generate_noise_points(n)
+# Description: Generates n poitns within a bounding box and maps them onto the
+ # corresponding road network
+# Args/Options: n
+# Returns: sf-dataframe
+# Output: ...
+# Action: ...
 generate_noise_points <- function(n) {
 	
 	sf_points <- st_sample(sf_bbox, size = n, type ="random")
@@ -170,33 +149,6 @@ generate_noise_points <- function(n) {
 	return(sf_nearest_points)
 }
 
-# Documentation: create_noise_flows
-# Usage: create_noise_flows(n)
-# Description: Maps n*2 points onto the road network and randomly combines the points
- # pairwise to linestrings
-# Args/Options: n
-# Returns: sf-dataframe
-# Output: ...
-# Action: ...
-# create_noise_flows <- function(n) {
-# 	sf_points_on_line <- generate_noise_points(n = n*2,
-# 																						 sf_bbox = sf_bbox,
-# 																						 sf_network = sf_network)
-# 	
-# 	index_pairs <- seq(1, length(sf_points_on_line) - 1, by = 2)
-# 	sf_linestrings <- lapply(index_pairs, function(i) {
-# 		st_sfc(st_linestring(st_coordinates(sf_points_on_line[c(i, i + 1), ])))
-# 	})
-# 	
-# 	sf_linestrings_sfc <- do.call(c, sf_linestrings)
-# 	
-# 	
-# 	sf_linestrings <- st_sf(geometry = sf_linestrings_sfc)
-# 	
-# 	st_crs(sf_linestrings) <- st_crs(sf_points_on_line)
-# 	
-# 	return(sf_linestrings)
-# }
 
 # Documentation: generate_noise_lines
 # Usage: generate_noise_lines(n)
@@ -222,16 +174,16 @@ generate_noise_lines <- function(sf_startpoints, min_length, max_length) {
 																							ncol = 2, byrow = TRUE)), 
 												 crs = st_crs(sf_startpoints))
 	}
-	sf_lines <- do.call(rbind, lines) %>% st_sfc
-	sf_lines <- st_sf(geometry = sf_lines, cluster_id = rep(0, length(lines)))
+	sfc_lines <- do.call(rbind, lines) %>% st_sfc
+	sf_lines <- st_sf(geometry = sfc_lines, cluster_id = rep(0, length(lines)))
 	sf_lines <- st_set_crs(sf_lines, st_crs(sf_startpoints))
-	# Extract endpoints
+	# Extract endpoints...
 	sf_endpoints <- lwgeom::st_endpoint(sf_lines)
 	st_crs(sf_endpoints) <- st_crs(sf_startpoints)
 	int_nearest_features <- st_nearest_feature(sf_endpoints, sf_network)
 	sf_nearest_lines <- sf_network[int_nearest_features, ]
 	
-
+	#...and map them onto the network
 	list_nearest_points <- lapply(1:nrow(sf_startpoints), function(i){
 		nearest_points <- st_nearest_points(sf_endpoints[i,], 
 																				sf_nearest_lines[i,])%>% st_cast("POINT")
@@ -244,6 +196,7 @@ generate_noise_lines <- function(sf_startpoints, min_length, max_length) {
 	sf_nearest_points <- sf_nearest_points %>% st_as_sf()
 	st_crs(sf_nearest_points) <- st_crs(sf_network)
 	sf_nearest_points$point_id <- 1:nrow(sf_nearest_points)
+	# Extract atrtibutes of the LINESTRINGS on which endpoitns where mapped
 	sf_nearest_points <- get_line_ids_of_mapped_points(sf_nearest_points, sf_network) %>%
 		st_as_sf()
 	sf_points_dest_noise <- sf_nearest_points %>%
@@ -253,6 +206,7 @@ generate_noise_lines <- function(sf_startpoints, min_length, max_length) {
 					 "dest_target"="target",
 					 "dest_geom"="geom")
 
+	# Combine mapped origin- and destination points into LINESTRINGS
 	final_lines <- mapply(function(start, end) {
 		end_coords <- st_coordinates(end)
 		st_sfc(st_linestring(rbind(st_coordinates(start), end_coords)))
@@ -284,12 +238,9 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 	all_origin_pts <- list()
 	all_dest_pts <- list()
 	all_cluster_ids <- list()
-	# all_line_ids <- list()
-	# all_source_ids <- list()
-	# all_target_ids <- list()
 	for (i in 1:n_clusters) {
 
-	  ### Configuration for linestrings ----------------------------------------------
+	  # Configuration for LINESTRINGS
 	  n_points <- sample(20:50, 1)
 	  base_length_flows <- sample(800:4000, 1)
 	  variance_length_flows <- runif(1, 10, 50)
@@ -299,11 +250,11 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 	  																		min = -variance_length_flows,
 	  																		max = variance_length_flows)
 	  
-	  ### Configuration for sample of origin points ----------------------------------
+	  # Configuration for sample of origin points 
 	  width_m <- sample(500:4000, 1)
 	  height_m <- sample(250:1000, 1)
 	  
-	  # Get random road
+	  # Get random road within the network
 	  sf_sampled_road <- sample_n(sf_network, 1)
 	  sf_center_point <-  st_coordinates(st_sample(sf_sampled_road, 1)) %>% as.numeric
 	  
@@ -323,19 +274,17 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 
 	  # Get one of the origin points...
 	  sf_startpoint <- sample(sf_points_origin$origin_geom, 1)
-	  ### Configuration for sample of destination points -----------------------------
+	  
+	  # ...and use it as startpoint for the determination of destination points
+	  sf_endpoint <- sf_startpoint + c(length * cos(base_angle), 
+	  																 length * sin(base_angle))
+	  st_crs(sf_endpoint) <- st_crs(sf_network)
+	  
+	  # Configuration for sample of destination points 
 	  width_m <- sample(500:3000, 1)
 	  height_m <- sample(250:1000, 1)
 	  
-	  # ...and use it as startpoint for the destination points
-	  sf_endpoint <- sf_startpoint + c(length * cos(base_angle), 
-	  																								length * sin(base_angle))
-	  
-	  
-	  
-	  st_crs(sf_endpoint) <- st_crs(sf_network)
-	  
-	  # Map destination point one road network
+	  # Map destination point on road network 
 	  int_nearest_feature <- st_nearest_feature(sf_endpoint, sf_network)
 	  sf_nearest_line <- sf_network[int_nearest_feature, ]
 	  sf_nearest_point <- st_nearest_points(sf_endpoint, sf_nearest_line) %>% 
@@ -356,20 +305,22 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 	  				 "dest_target"="target",
 	  				 "dest_geom"="geom")
 	  
-	  ### Draw linestrings with little intersection between linestrings---------------
+	  # Draw LINESTRINGS with little intersection between each other
 	  sf_points_origin <- sf_points_origin %>% st_as_sf()
 	  sf_points_dest <- sf_points_dest %>% st_as_sf()
 	  
 	  center_origin <- st_centroid(st_union(sf_points_origin))
 	  center_destination <- st_centroid(st_union(sf_points_dest))
 	  
-	  # Get angle between center-points to get a proxy of the direction
+	  # Get angle between center-points of origin- and destination points
+	  #	to get a proxy of the direction
 	  angle <- atan2(st_coordinates(center_destination)[2] - st_coordinates(center_origin)[2],
 	  							 st_coordinates(center_destination)[1] - st_coordinates(center_origin)[1])
 	  
 	  # Convert angle in degrees
 	  angle_deg <- angle * 180 / pi
 	  
+	  # Sort x- or y-coordinates depending on the angle between their center-points
 	  if (abs(angle_deg) <= 45 || abs(angle_deg) > 135) {
 	  	# Sort x-coordinates
 	  	sf_points_origin <- sf_points_origin[order(st_coordinates(sf_points_origin)[, 1]), ]
@@ -380,6 +331,7 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 	  	sf_points_dest <- sf_points_dest[order(st_coordinates(sf_points_dest)[, 2]), ]
 	  }
 
+	  # Combine sorted OD-points into LINESTRINGS
 	  sf_linestrings <- create_sorted_linestrings(sf_points_origin, sf_points_dest)
 	  all_lines[[i]] <- sf_linestrings
 	  all_origin_pts[[i]] <- sf_points_origin
@@ -388,6 +340,7 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 	  cat("Cluster", i, "created\n")
 	}
 	
+	# Combine LINESTRINGS, OD-points and cluster-ids into one matrix
 	combined_lines <- do.call(rbind, all_lines)
 	combined_origin_pts <- do.call(rbind, all_origin_pts)
 	combined_dest_pts <- do.call(rbind, all_dest_pts)
@@ -403,10 +356,13 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 	sf_clusters$cluster_id <- unlist(sf_clusters$cluster_id)
 	
 
+	# Generate noise points
 	sf_startpoints <- generate_noise_points(n = n_noiseflows)
 	sf_startpoints <- sf_startpoints %>% st_as_sf()
 	sf_startpoints$point_id <- 1:nrow(sf_startpoints)
 	st_crs(sf_startpoints) <- st_crs(sf_network)
+	
+	# Map noise points
 	sf_startpoints <- get_line_ids_of_mapped_points(sf_startpoints, sf_network) %>%
 		st_as_sf()
 
@@ -417,6 +373,7 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 					 "origin_target"="target",
 					 "origin_geom"="geom")
 
+	# Create noise flows
 	sf_noiseflows <- generate_noise_lines(sf_points_origin_noise,
 																				min_length = 100,
 																				max_length = 6000)
@@ -438,21 +395,16 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 					 dest_geom)
 	st_crs(sf_noiseflows) <- st_crs(sf_network)
 
-	# sf_endpoints <- lwgeom::st_endpoint(sf_noiseflows) %>% st_as_sf()
-	# 
-	# sf_endpoints <- get_line_ids_of_mapped_points(sf_endpoints, sf_network)
-	print(sf_clusters)
-	print(sf_noiseflows)
-	sf_noiseflows <- st_set_geometry(sf_noiseflows, 'geometry')
-	sf_clusters <- st_set_geometry(sf_clusters, 'geometry')
 	sf_final <- rbind(sf_noiseflows[,-c(11,12)], 
 										sf_clusters[,-c(11,12)])
 	sf_final$flow_id <- 1:nrow(sf_final)
 	return(sf_final)
 }
 
-################ MAPPING NEEDS IDS OF ROAD SEGMENTS IN NETWORK!!!
-### Basic Configuration --------------------------------------------------------
+
+################################################################################
+# Main
+################################################################################
 sf_network <- st_read(con, "col_2po_4pgr")
 sf_bbox <- st_convex_hull(st_union(sf_network))
 
@@ -464,9 +416,6 @@ sf_clusters <- create_synth_dataset(n_clusters = n_clusters,
 															 n_noiseflows = n_noiseflows)
 
 
-
-
-# summary(sf_clusters)
 colors <- c(rgb(211/255, 211/255, 211/255, 0.5), rainbow(n_clusters))
 names(colors) <- c("0", as.character(1:n_clusters))
 
@@ -485,16 +434,4 @@ write_rds(sf_clusters, paste0("./data/synthetic/network_distance/",
 															n_noiseflows,
 															".rds"))
 
-st_write(sf_clusters, con,  paste0("col_synthetic_",
-																	 n_clusters,
-																	 "_",
-																	 n_noiseflows,
-																	 ".rds"))
 
-# sf_clusters %>%
-# 	mutate(dist=st_length(sf_clusters$geometry) %>% as.numeric) %>% 
-# 	filter(cluster_id==0) %>%
-# 	summary
-# 
-# 
-# st_geometry_type(sf_network) %>% unique
