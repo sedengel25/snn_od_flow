@@ -135,6 +135,35 @@ matrix_flow_nd <- matrix(int_big_m, nrow = int_max_value, ncol = int_max_value)
 
 matrix_flow_nd[cbind(dt_flow_nd$flow_m, dt_flow_nd$flow_n)] <- dt_flow_nd$distance
 
+
+
+matrix_flow_nd_boolean <- matrix_flow_nd < int_big_m
+matrix_flow_nd_true <- ifelse(matrix_flow_nd_boolean, matrix_flow_nd,  NA)
+matrix_flow_nd_true_scaled <- matrix_flow_nd_true %>% 
+	rescale(to = c(0, 1))
+
+# Calculate angles for each flow
+angles <- sapply(st_geometry(sf_trips_labelled), function(line) {
+	coords <- st_coordinates(line)
+	angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
+	ifelse(angle < 0, angle + 360, angle)
+})
+
+# Calculate a matrix containing the differences in angles
+angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
+	rescale(to = c(0, 2))
+# Calculate the lengths of all flows
+lengths <- sapply(st_geometry(sf_trips_labelled), function(line) {
+	length <- st_length(line)
+})
+
+# Calculate a matrix containing the differences in lengths
+length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
+	rescale(to = c(0, 2))
+
+# Combine all the matrices into one
+final_dist_mat <- matrix_flow_nd_true_scaled + angle_diff_mat + length_diff_mat
+
 ################################################################################
 # 2. Find a good value for k based on the RKD plot
 ################################################################################
@@ -156,5 +185,56 @@ int_k <- 20
 
 
 # Get a matrix where the columns represent the knn of the flow in the first column
-matrix_knn_ind <- t(apply(matrix_flow_nd, 1, r1_get_knn_ind, int_k))
-matrix_knn_ind
+matrix_knn_dist <- t(apply(final_dist_mat, 1, r1_get_knn_dist, int_k))
+matrix_knn_ind <- t(apply(final_dist_mat, 1, r1_get_knn_ind, int_k))
+
+
+num_flows <- nrow(matrix_knn_ind)
+max_index <- max(matrix_knn_ind)  
+
+binary_matrix <- matrix(0, nrow = num_flows, ncol = max_index)
+boolean_knn <- !is.na(matrix_knn_dist)
+matrix_knn_ind <- ifelse(boolean_knn, matrix_knn_ind,  NA)
+# Fill binary matrix: 1 for flows that are knn of flow i
+for (i in 1:num_flows) {
+	binary_matrix[i, matrix_knn_ind[i, ]] <- 1
+}
+binary_matrix[2,]
+# Get number of shared knn
+snn_matrix <- binary_matrix %*% t(binary_matrix)
+
+
+# Execute the shared neaerest neighbor approach
+set.seed(123)  
+clusters <- sNNclust(snn_matrix, 
+										 k = int_k, 
+										 eps = round(int_k*0.75),
+										 minPts = 13,
+										 borderPoints = TRUE)
+
+# Create dataframe to analyse the results
+df_cluster <- data.frame(
+	flow_id = 1:length(clusters$cluster),
+	cluster_id = clusters$cluster)
+
+# Add the LINESTRING-geometry for visual evaluation
+sf_snn <- df_cluster %>%
+	left_join(sf_trips_labelled %>% select(flow_id, geometry), by = "flow_id") %>%
+	st_as_sf()
+
+################################################################################
+# 4. Evaluate the results
+################################################################################
+calc_geom_sil_score(sf_snn[sf_snn$cluster_id!=0,])
+calc_geom_sil_score(sf_trips_labelled[sf_trips_labelled$cluster_id!=0,])
+
+# Ground truth:
+ggplot(data = sf_trips_labelled[sf_trips_labelled$cluster_id!=0,]) +
+	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
+	theme_void()
+
+# Cluster result:
+ggplot(data = sf_snn[sf_snn$cluster_id!=0,]) +
+	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
+	theme_void()
+
