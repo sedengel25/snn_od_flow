@@ -46,9 +46,9 @@ sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
 
-int_buffer <- 2000
+int_buffer <- 3000
 
-dt_dist_mat <- calc_local_node_dist_mat()
+dt_dist_mat <- calc_local_node_dist_mat(buffer = int_buffer)
 
 write_rds(x = dt_dist_mat, file = paste0("./data/input/",
 																				 char_region_abb,

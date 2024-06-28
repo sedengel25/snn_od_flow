@@ -19,6 +19,9 @@ library(profvis)
 library(bit64)
 library(ggplot2)
 library(lwgeom)
+library(units)
+library(scales)
+library(dbscan)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

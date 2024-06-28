@@ -76,7 +76,7 @@ void printActualVectorSize(const std::vector<T>& v, const std::string& name) {
 
 // [[Rcpp::export]]
 void checkInput(DataFrame df) {
-	IntegerVector ids = df["id_new"];
+	IntegerVector ids = df["id"];
 	Rcout << "Erste 10 'line_id' Werte: ";
 	for (int i = 0; i < 10; ++i) {
 		Rcout << ids[i] << " ";
@@ -109,11 +109,11 @@ DataFrame process_networks(DataFrame dt_od_pts_sub,
 													 DataFrame dt_dist_mat) {
 	
 	//Split R-dataframes in C++ vectors
-	IntegerVector od_pts_sub_id = dt_od_pts_sub["id_new"];
+	IntegerVector od_pts_sub_id = dt_od_pts_sub["id"];
 	IntegerVector od_pts_sub_line_id = dt_od_pts_sub["id_edge"];
 	IntegerVector od_pts_sub_start = dt_od_pts_sub["dist_to_start"];
 	IntegerVector od_pts_sub_end = dt_od_pts_sub["dist_to_end"];
-	IntegerVector od_pts_full_id = dt_od_pts_full["id_new"];
+	IntegerVector od_pts_full_id = dt_od_pts_full["id"];
 	IntegerVector od_pts_full_line_id = dt_od_pts_full["id_edge"];
 	IntegerVector od_pts_full_start = dt_od_pts_full["dist_to_start"];
 	IntegerVector od_pts_full_end = dt_od_pts_full["dist_to_end"];

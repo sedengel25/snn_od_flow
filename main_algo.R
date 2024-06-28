@@ -104,6 +104,10 @@ int_n_od_pts <- nrow(dt_origin)
 int_chunks <- r1_create_chunks(cores = int_cores, n = int_n_od_pts)
 
 
+dt_network
+dt_dist_mat
+dt_origin
+dt_dest
 ################################################################################
 # PSQL-based nd calculation
 ################################################################################

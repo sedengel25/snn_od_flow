@@ -86,3 +86,28 @@ r1_create_rkd_dt <- function(k_max, matrix_knn_dist) {
 	return(dt_rkd)
 }
 
+
+
+# Documentation: r1_datatable_nd_to_matrix_nd
+# Usage: r1_datatable_nd_to_matrix_nd(dt_knn)
+# Description: Transform datatable with OD-flow distances into a matrix
+# Args/Options: dt_knn
+# Returns: data.table
+# Output: ...
+# Action: ...
+r1_datatable_nd_to_matrix_nd <- function(dt_flows_nd, complete = TRUE) {
+	
+	dt_knn <- dt_knn %>%
+		arrange(flow_ref, distance, flow_other)
+	
+	dt_knn <- dt_knn %>%
+		group_by(flow_ref) %>%
+		mutate(row_id = row_number()) %>%
+		ungroup() %>%
+		as.data.table
+	
+	dt_knn_r <- dcast(dt_knn, flow_ref ~ row_id, value.var = "flow_other")
+	dt_knn_r_dist <- dcast(dt_knn, flow_ref ~ row_id, value.var = "distance")
+
+	return(list("dt_flows" = dt_knn_r, "dt_nd" = dt_knn_r_dist))
+}

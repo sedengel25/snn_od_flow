@@ -4,7 +4,9 @@ source("./src/utils/psql_2.R")
 source("./src/utils/r_1.R")
 source("./src/utils/r_2.R")
 
-
+################################################################################
+# main_input.R
+################################################################################
 # Documentation: osmconvert_create_sub_osm_pbf
 # Usage: osmconvert_create_sub_osm_pbf()
 # Description: Creates a sub osm.pbf-file based on the polygon specified
@@ -115,8 +117,15 @@ osm2po_create_routable_network <- function() {
 
 
 
-
-calc_local_node_dist_mat <- function() {
+# Documentation: calc_local_node_dist_mat
+# Usage: calc_local_node_dist_mat(buffer)
+# Description: Calculates a distance matrix between the intersection of the given
+	# road network and the given buffer
+# Args/Options: buffer
+# Returns: ...
+# Output: ...
+# Action: Executing several cmd- and psql-queries
+calc_local_node_dist_mat <- function(buffer) {
 	# Check whether osm2po has created a coherent graph
 	igraph_network <- sf_network %>%
 		as.data.frame() %>%
@@ -178,17 +187,19 @@ calc_local_node_dist_mat <- function() {
 	list_dt <- parallel::mclapply(nodes, 
 																shortest_paths_per_node,
 																buffer = int_buffer,
-																mc.cores = 1)
+																mc.cores = int_cores)
 	
 	dt_dist_mat <- rbindlist(list_dt)
 }
 
 
-
-plot_optimal_k <- function(k_max) {
+################################################################################
+# euclidean_snn.R
+################################################################################
+plot_optimal_k <- function(k_max, matrix_flow_distances) {
 	
 	
-	matrix_knn_dist <- t(apply(matrix_distances, 1, r1_get_knn_dist, k_max))
+	matrix_knn_dist <- t(apply(matrix_flow_distances, 1, r1_get_knn_dist, k_max))
 	
 	dt_rkd <- r1_create_rkd_dt(k_max = k_max, matrix_knn_dist)
 	
@@ -219,34 +230,35 @@ calc_geom_dist_mat <- function(sf_data) {
 	dest_distances <- st_distance(sf_data$dest, by_element = FALSE)
 	
 	# ...in order to calculate a distance matrix for the flow
-	dist_mat <- drop_units(origin_distances + dest_distances) %>%
-		rescale(to = c(0,2))
+	dist_mat <- drop_units(origin_distances + dest_distances) 
 	
 	
 	# Calculate angles for each flow
-	angles <- sapply(st_geometry(sf_data), function(line) {
-		coords <- st_coordinates(line)
-		angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
-		ifelse(angle < 0, angle + 360, angle)
-	})
-	
-	# Calculate a matrix containing the differences in angles
-	angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
-		rescale(to = c(0, 1))
-	# Calculate the lengths of all flows
-	lengths <- sapply(st_geometry(sf_data), function(line) {
-		length <- st_length(line)
-	})
-	
-	# Calculate a matrix containing the differences in lengths
-	length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
-		rescale(to = c(0, 1))
+	# angles <- sapply(st_geometry(sf_data), function(line) {
+	# 	coords <- st_coordinates(line)
+	# 	angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
+	# 	ifelse(angle < 0, angle + 360, angle)
+	# })
+	# 
+	# # Calculate a matrix containing the differences in angles
+	# angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
+	# 	rescale(to = c(0, 1))
+	# # Calculate the lengths of all flows
+	# lengths <- sapply(st_geometry(sf_data), function(line) {
+	# 	length <- st_length(line)
+	# })
+	# 
+	# # Calculate a matrix containing the differences in lengths
+	# length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
+	# 	rescale(to = c(0, 1))
 	
 	# Combine all the matrices into one
-	final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat
+	#final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat
 	
-	return(final_dist_mat)
+	return(dist_mat)
 }
+
+
 
 calc_geom_sil_score <- function(sf_data) {
 
@@ -267,4 +279,32 @@ calc_geom_sil_score <- function(sf_data) {
 
 
 
-
+# Documentation: add_dist_start_end
+# Usage: add_dist_start_end(dt_points)
+# Description: Calculates distances between OD-poitns to start and end of the 
+# corresponding road segment
+# Args/Options: dt_points
+# Returns: datatable
+# Output: ...
+# Action: ...
+add_dist_start_end <- function(dt_points) {
+	dt_points <- dt_points %>%
+		left_join(dt_network, by = c("id_edge" ="id")) 
+	
+	dt_points <- dt_points%>%
+		mutate(geom_origin = lwgeom::st_startpoint(geom_way),
+					 geom_dest = lwgeom::st_endpoint(geom_way))
+	
+	dt_points <- dt_points %>%
+		mutate(dist_to_start = round(st_distance(dt_points$geom, 
+																			 dt_points$geom_origin,
+																			 by_element = TRUE) %>% as.numeric(),0) %>%
+					 	as.integer(),
+					 dist_to_end = round(st_distance(dt_points$geom, 
+					 													dt_points$geom_dest,
+					 													by_element = TRUE) %>% as.numeric(),0)  %>%
+					 	as.integer()) %>%
+		select(id, id_edge, dist_to_start, dist_to_end)
+	
+	return(dt_points)
+}
