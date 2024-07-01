@@ -238,3 +238,21 @@ psql1_calc_nd_diff_roads <- function(con,
 	
 	
 }
+
+# Documentation: psql1_create_visualisable_flows
+# Usage: psql1_create_visualisable_flows(con, table_origin, table_dest)
+# Description: Binds points to linestrings so flows can be visualized
+# Args/Options: con, table_origin, table_dest
+# Returns: ...
+# Output: ...
+# Action: Binds points to linestrings
+psql1_create_visualisable_flows <- function(con, table_origin, table_dest, table_vis) {
+	geo_col <- psql2_get_name_of_geom_col(con, table_origin)
+	query <- paste0("CREATE TABLE ",  table_vis, " AS
+  SELECT origin.id,
+    ST_MakeLine(origin.", geo_col, ", dest.", geo_col,") AS line_geom
+  FROM ",  table_origin, " origin
+  INNER JOIN ", table_dest, " dest ON origin.id = dest.id;")
+	
+	dbExecute(con, query)
+}

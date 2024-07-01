@@ -22,6 +22,9 @@ library(lwgeom)
 library(units)
 library(scales)
 library(dbscan)
+library(mclust)
+library(clue)
+#library(ClusterR)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

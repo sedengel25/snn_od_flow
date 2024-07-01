@@ -230,32 +230,33 @@ calc_geom_dist_mat <- function(sf_data) {
 	dest_distances <- st_distance(sf_data$dest, by_element = FALSE)
 	
 	# ...in order to calculate a distance matrix for the flow
-	dist_mat <- drop_units(origin_distances + dest_distances) 
+	dist_mat <- drop_units(origin_distances + dest_distances) %>%
+		rescale(to = c(0, 1))
 	
 	
 	# Calculate angles for each flow
-	# angles <- sapply(st_geometry(sf_data), function(line) {
-	# 	coords <- st_coordinates(line)
-	# 	angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
-	# 	ifelse(angle < 0, angle + 360, angle)
-	# })
-	# 
-	# # Calculate a matrix containing the differences in angles
-	# angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
-	# 	rescale(to = c(0, 1))
-	# # Calculate the lengths of all flows
-	# lengths <- sapply(st_geometry(sf_data), function(line) {
-	# 	length <- st_length(line)
-	# })
-	# 
-	# # Calculate a matrix containing the differences in lengths
-	# length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
-	# 	rescale(to = c(0, 1))
+	angles <- sapply(st_geometry(sf_data), function(line) {
+		coords <- st_coordinates(line)
+		angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
+		ifelse(angle < 0, angle + 360, angle)
+	})
+
+	# Calculate a matrix containing the differences in angles
+	angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
+		rescale(to = c(0, 2))
+	# Calculate the lengths of all flows
+	lengths <- sapply(st_geometry(sf_data), function(line) {
+		length <- st_length(line)
+	})
+
+	# Calculate a matrix containing the differences in lengths
+	length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
+		rescale(to = c(0, 2))
 	
 	# Combine all the matrices into one
-	#final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat
+	final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat
 	
-	return(dist_mat)
+	return(final_dist_mat)
 }
 
 
@@ -273,8 +274,11 @@ calc_geom_sil_score <- function(sf_data) {
 	df_sil_scores <- df_sil_scores %>%
 		mutate(flow_id = 1:nrow(df_sil_scores))
 	
+	df_sil_scores <- df_sil_scores %>%
+		arrange(desc(sil_width))
+	
 	average_sil_score <- mean(df_sil_scores[, 3])
-	return(average_sil_score)
+	return(df_sil_scores)
 }
 
 
