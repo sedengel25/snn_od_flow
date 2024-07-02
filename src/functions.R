@@ -193,6 +193,92 @@ calc_local_node_dist_mat <- function(buffer) {
 }
 
 
+
+# Documentation: calc_scaled_geom_flow_dist_mat
+# Usage: calc_scaled_geom_flow_dist_mat(dt_flow_nd)
+# Description: Calculates a distance matrix for OD flows based on their scaled 
+	# network distance as well as the scaled differences between their angles 
+	# and their lengths 
+# Args/Options: dt_flow_nd
+# Returns: matrix
+# Output: ...
+# Action: ...
+calc_scaled_geom_flow_dist_mat <- function(dt_flow_nd) {
+	int_max_value <- max(dt_flow_nd$flow_m, dt_flow_nd$flow_n)
+	
+	int_big_m <- 9e10
+	
+	# Initiate a matrix with BIG M values
+	matrix_flow_nd <- matrix(int_big_m, nrow = int_max_value, ncol = int_max_value)
+	
+	# Fill the matrix at the cells for which with real distances exist  
+	matrix_flow_nd[cbind(dt_flow_nd$flow_m, dt_flow_nd$flow_n)] <- dt_flow_nd$distance
+	
+	# Create a matrix with TRUEs where real distances exist
+	matrix_flow_nd_boolean <- matrix_flow_nd < int_big_m
+	
+	# Fills matrix with NAs where no rael distances exist
+	matrix_flow_nd_true <- ifelse(matrix_flow_nd_boolean, matrix_flow_nd,  NA)
+	
+	# Scale matrix betwenn 0 and 1
+	matrix_flow_nd_true_scaled <- matrix_flow_nd_true %>%
+		rescale(to = c(0, 1))
+	
+	# Calculate angles for each flow
+	angles <- sapply(st_geometry(sf_trips_labelled), function(line) {
+		coords <- st_coordinates(line)
+		angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
+		ifelse(angle < 0, angle + 360, angle)
+	})
+	
+	# Calculate a matrix containing the differences in angles and scale it
+	angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
+		rescale(to = c(0, 1))
+	# Calculate the lengths of all flows
+	lengths <- sapply(st_geometry(sf_trips_labelled), function(line) {
+		length <- st_length(line)
+	})
+	
+	# Calculate a matrix containing the differences in lengths and scale it
+	length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
+		rescale(to = c(0, 1))
+	
+	# Combine all the matrices into one
+	final_dist_mat <- matrix_flow_nd_true_scaled + angle_diff_mat + length_diff_mat
+	
+	return(final_dist_mat)
+}
+
+
+
+# Documentation: calc_flow_dist_mat
+# Usage: calc_flow_dist_mat(dt_flow_nd)
+# Description: Calculates a distance matrix for OD flows based on their actual 
+	# network distance  
+# Args/Options: dt_flow_nd
+# Returns: matrix
+# Output: ...
+# Action: ...
+calc_flow_dist_mat <- function(dt_flow_nd) {
+	int_max_value <- max(dt_flow_nd$flow_m, dt_flow_nd$flow_n)
+	
+	int_big_m <- 9e10
+	
+	# Initiate a matrix with BIG M values
+	matrix_flow_nd <- matrix(int_big_m, nrow = int_max_value, ncol = int_max_value)
+	
+	# Fill the matrix at the cells for which with real distances exist  
+	matrix_flow_nd[cbind(dt_flow_nd$flow_m, dt_flow_nd$flow_n)] <- dt_flow_nd$distance
+	
+	# Create a matrix with TRUEs where real distances exist
+	matrix_flow_nd_boolean <- matrix_flow_nd < int_big_m
+	
+	# Fills matrix with NAs where no rael distances exist
+	matrix_flow_nd_true <- ifelse(matrix_flow_nd_boolean, matrix_flow_nd,  NA)
+	
+	return(matrix_flow_nd_true)
+}
+
 ################################################################################
 # euclidean_snn.R
 ################################################################################
@@ -220,44 +306,6 @@ plot_optimal_k <- function(k_max, matrix_flow_distances) {
 
 
 
-calc_geom_dist_mat <- function(sf_data) {
-	# Extract origin- and destination-geoemtry from linestrings
-	sf_data$origin <- lwgeom::st_startpoint(sf_data$geometry)
-	sf_data$dest <- lwgeom::st_endpoint(sf_data$geometry)
-	
-	# Get distances between origin- and destination points...
-	origin_distances <- st_distance(sf_data$origin, by_element = FALSE)
-	dest_distances <- st_distance(sf_data$dest, by_element = FALSE)
-	
-	# ...in order to calculate a distance matrix for the flow
-	dist_mat <- drop_units(origin_distances + dest_distances) %>%
-		rescale(to = c(0, 1))
-	
-	
-	# Calculate angles for each flow
-	angles <- sapply(st_geometry(sf_data), function(line) {
-		coords <- st_coordinates(line)
-		angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
-		ifelse(angle < 0, angle + 360, angle)
-	})
-
-	# Calculate a matrix containing the differences in angles
-	angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
-		rescale(to = c(0, 2))
-	# Calculate the lengths of all flows
-	lengths <- sapply(st_geometry(sf_data), function(line) {
-		length <- st_length(line)
-	})
-
-	# Calculate a matrix containing the differences in lengths
-	length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
-		rescale(to = c(0, 2))
-	
-	# Combine all the matrices into one
-	final_dist_mat <- dist_mat + angle_diff_mat + length_diff_mat
-	
-	return(final_dist_mat)
-}
 
 
 

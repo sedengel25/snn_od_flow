@@ -215,55 +215,60 @@ DataFrame process_networks(DataFrame dt_od_pts_sub,
 
 
 
+
 // [[Rcpp::export]]
 List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int eps, int int_k) {
 	int n = dt_knn.nrow();
+
 	std::vector<int> flows;
 	std::vector<int> shared_densities;
 	List dr_flows(n);
 	
 	for (int i = 0; i < n; ++i) {
 		int flow = dt_knn(i, 0); 
-		//Rcpp::Rcout << "Flow: " << flow << std::endl;
+
 		
 		std::vector<int> knn_i;
 		std::vector<int> dr_flows_i;
 		for (int j = 1; j <= int_k; ++j) {
-			knn_i.push_back(dt_knn(i, j));
+			if(dt_knn(i, j)>0){
+				knn_i.push_back(dt_knn(i, j));
+			}
 		}
 		
 		std::sort(knn_i.begin(), knn_i.end());
-		// if(flow==1){
-			// 	for (auto v : knn_i) Rcpp::Rcout << v << " ";
-			// 	Rcpp::Rcout << "\n";
-			// }
+
 		
 		int shared_density = 0;
+		int length_k = knn_i.size();
+		
 		
 		for (int k : knn_i) {
+			
 			if (std::find(id.begin(), id.end(), k) != id.end()) {
-				// if(flow==1){
-					// 	Rcpp::Rcout << "k: " << k << std::endl;
-					// }
 				int idx = std::find(id.begin(), id.end(), k) - id.begin();
 				std::vector<int> knn_k;
 				for (int m = 1; m <= int_k; ++m) {
-					knn_k.push_back(dt_knn(idx, m));
+					if(dt_knn(idx, m)>0){
+						knn_k.push_back(dt_knn(idx, m));
+					}
+			
 				}
+				
+				
+
 				
 				std::sort(knn_i.begin(), knn_i.end());
 				std::sort(knn_k.begin(), knn_k.end());
+				
+				
 				std::vector<int> intersection;
 				std::set_intersection(knn_i.begin(), 
-															knn_i.end(), 
-															knn_k.begin(), 
-															knn_k.end(), 
-															std::back_inserter(intersection));
-				// if(flow==1){
-					// 	for (auto v : intersection) Rcpp::Rcout << v << " ";
-					// 	Rcpp::Rcout << "\n";
-					// 	break;
-					// }
+                          knn_i.end(), 
+                          knn_k.begin(), 
+                          knn_k.end(), 
+                          std::back_inserter(intersection));
+
 				if (intersection.size() >= eps) {
 					shared_density += 1;
 					dr_flows_i.push_back(k);
@@ -278,7 +283,7 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int ep
 	}
 	
 	DataFrame snn_density = DataFrame::create(Named("flow") = flows, 
-																						Named("shared_density") = shared_densities);
+                                           Named("shared_density") = shared_densities);
 	
 	std::vector<int> from;   // Speichert die Indexwerte 
 	std::vector<int> dr_flows_final; // Speichert die Werte in den Vektoren
@@ -296,16 +301,16 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int ep
 		}
 		for (int j = 0; j < temp.size(); j++) {
 			// -----------------------------------------------------------------------FLOWS STATT INDEX NEHMEN--------------------
-				from.push_back(flows[i]); // i + 1 für 1-basierte Indexierung
+			from.push_back(flows[i]); // i + 1 für 1-basierte Indexierung
 			dr_flows_final.push_back(temp[j]);
 		}
 	}
 	
 	DataFrame df_dr_flows = DataFrame::create(Named("from") = from, 
-																						Named("to") = dr_flows_final);
+                                           Named("to") = dr_flows_final);
 	
 	List result = List::create(Named("snn_density") = snn_density, 
-														 Named("dr_flows") = df_dr_flows);
+                            Named("dr_flows") = df_dr_flows);
 	
 	return result;
 }

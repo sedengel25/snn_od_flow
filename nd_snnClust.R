@@ -32,7 +32,7 @@ sf_trips_labelled <- read_rds(here::here(char_path_rds,
 
 sf_trips_labelled$origin_geom <- lwgeom::st_startpoint(sf_trips_labelled$geometry)
 sf_trips_labelled$dest_geom <- lwgeom::st_endpoint(sf_trips_labelled$geometry)
-
+st_write(sf_trips_labelled, con, "test", delete_layer = TRUE)
 # n_clusters <- length(unique(sf_trips_labelled$cluster_id))
 # colors <- c(rgb(211/255, 211/255, 211/255, 0.5), rainbow(n_clusters))
 # names(colors) <- c("0", as.character(1:n_clusters))
@@ -72,12 +72,16 @@ dt_network <- dt_network %>%
 
 
 ################################################################################
-# 2. Calc ND between OD flows
+# 2. Calc ND between OD points
 ################################################################################
 int_n_od_pts <- nrow(dt_origin)
 
 int_chunks <- r1_create_chunks(cores = int_cores, n = int_n_od_pts)
 
+str(dt_origin)
+str(dt_dest)
+str(dt_network)
+str(dt_dist_mat)
 # ND betwenn origin points
 dt_o_pts_nd <- parallel::mclapply(1:length(int_chunks), function(i) {
 	id_start <- ifelse(i == 1, 1, int_chunks[i - 1] + 1)
@@ -122,13 +126,46 @@ dt_flow_nd <- dt_flow_nd %>%
 	ungroup() %>%
 	as.data.table
 
-################################################################################
-# 3. Calc OD-flow ND-matrix
-################################################################################
-matrix_flow_dist <- calc_flow_dist_mat(dt_flow_nd)
+# Create distance matrix between flow
+int_max_value <- max(dt_flow_nd$flow_m, dt_flow_nd$flow_n)
 
+int_big_m <- 9e10
+matrix_flow_nd <- matrix(int_big_m, nrow = int_max_value, ncol = int_max_value)
+
+
+matrix_flow_nd[cbind(dt_flow_nd$flow_m, dt_flow_nd$flow_n)] <- dt_flow_nd$distance
+
+
+
+matrix_flow_nd_boolean <- matrix_flow_nd < int_big_m
+matrix_flow_nd_true <- ifelse(matrix_flow_nd_boolean, matrix_flow_nd,  NA)
+# matrix_flow_nd_true_scaled <- matrix_flow_nd_true %>% 
+# 	rescale(to = c(0, 1))
+# 
+# # Calculate angles for each flow
+# angles <- sapply(st_geometry(sf_trips_labelled), function(line) {
+# 	coords <- st_coordinates(line)
+# 	angle <- atan2(diff(coords[,2]), diff(coords[,1])) * (180 / pi)
+# 	ifelse(angle < 0, angle + 360, angle)
+# })
+# 
+# # Calculate a matrix containing the differences in angles
+# angle_diff_mat <- outer(angles, angles, FUN = function(x, y) abs(x - y)) %>%
+# 	rescale(to = c(0, 1))
+# # Calculate the lengths of all flows
+# lengths <- sapply(st_geometry(sf_trips_labelled), function(line) {
+# 	length <- st_length(line)
+# })
+# 
+# # Calculate a matrix containing the differences in lengths
+# length_diff_mat <- outer(lengths, lengths, FUN = function(x, y) abs(x - y)) %>%
+# 	rescale(to = c(0, 1))
+# 
+# # Combine all the matrices into one
+# final_dist_mat <- matrix_flow_nd_true_scaled + angle_diff_mat + length_diff_mat
+final_dist_mat <- matrix_flow_nd_true
 ################################################################################
-# 4. Find a good value for k based on the RKD plot
+# 2. Find a good value for k based on the RKD plot
 ################################################################################
 int_k_max <- 50
 #diag(matrix_distances) <- Inf
@@ -141,71 +178,101 @@ int_k_max <- 50
 
 int_k <- 20
 
-
 ################################################################################
-# 3. Calculate SNN Density
+# 3. Main
 ################################################################################
-matrix_knn_dist <- t(apply(matrix_flow_dist, 1, r1_get_knn_dist, int_k))
-matrix_knn_ind <- t(apply(matrix_flow_dist, 1, r1_get_knn_ind, int_k))
+# Get a matrix where the columns represent the knn of the flow in the first column
+matrix_knn_dist <- t(apply(final_dist_mat, 1, r1_get_knn_dist, int_k))
+matrix_knn_ind <- t(apply(final_dist_mat, 1, r1_get_knn_ind, int_k))
 
 
 num_flows <- nrow(matrix_knn_ind)
 max_index <- max(matrix_knn_ind)  
-# Get a boolean matrix (TRUE = distance matrix contains value)...
+
+binary_matrix <- matrix(0, nrow = num_flows, ncol = max_index)
 boolean_knn <- !is.na(matrix_knn_dist)
-# ...to get NAs also in the index-distance matrix
 matrix_knn_ind <- ifelse(boolean_knn, matrix_knn_ind,  NA)
+# Fill binary matrix: 1 for flows that are knn of flow i
+for (i in 1:num_flows) {
+	binary_matrix[i, matrix_knn_ind[i, ]] <- 1
+}
+
+# Get number of shared knn
+snn_matrix_nd <- binary_matrix %*% t(binary_matrix)
+
+eps <-  round(int_k*0.75)
+minpts <- 16
+
+# Calculate snn density per flow
+snn_densities <- numeric(nrow(snn_matrix_nd))
+for (i in 1:nrow(matrix_knn_ind)) {
+	knn_indices <- matrix_knn_ind[i, ]
+	knn_indices <- knn_indices[!is.na(knn_indices)]
+	if (length(knn_indices) > 0) {
+		snn_densities[i] <- sum(snn_matrix_nd[i, knn_indices] >= eps, na.rm = TRUE)
+	}
+}
 
 
-int_id <- 1:nrow(matrix_knn_ind)
 
-int_eps <- floor(int_k/2)
+# Execute the shared neaerest neighbor approach
+set.seed(123)  
 
-dt_knn <- as.data.table(matrix_knn_ind)
-dt_knn$i <- int_id
-matrix_knn <- dt_knn %>%
-	select(i, everything()) %>%
-	as.matrix
+#snn_densities <- rowSums(snn_matrix_nd >= eps)
 
+clusters <- sNNclust(snn_matrix_nd, 
+										 k = int_k, 
+										 eps = eps,
+										 minPts = minpts,
+										 borderPoints = TRUE)
 
-list_df <- cpp_calc_density_n_get_dr_df(dt_knn = matrix_knn,
-								id = int_id,
-								eps = int_eps,
-								int_k = int_k)
+# Create dataframe to analyse the results
+df_cluster <- data.frame(
+	flow_id = 1:length(clusters$cluster),
+	cluster_id = clusters$cluster,
+	snn_density = snn_densities)
 
-dt_snn_density <- list_df$snn_density %>% as.data.table()
-
-
+# Add the LINESTRING-geometry for visual evaluation
+sf_snn_nd <- df_cluster %>%
+	left_join(sf_trips_labelled %>% select(flow_id, geometry), by = "flow_id") %>%
+	st_as_sf()
 
 ################################################################################
-# 3. Calculate SNN Density (slow R implementation)
+# 4. Evaluate the results
 ################################################################################
-# binary_matrix <- matrix(0, nrow = num_flows, ncol = max_index)
-# boolean_knn <- !is.na(matrix_knn_dist)
-# matrix_knn_ind <- ifelse(boolean_knn, matrix_knn_ind,  NA)
-# # Fill binary matrix: 1 for flows that are knn of flow i
-# for (i in 1:num_flows) {
-# 	binary_matrix[i, matrix_knn_ind[i, ]] <- 1
-# }
-# 
-# # Get number of shared knn
-# snn_matrix_nd <- binary_matrix %*% t(binary_matrix)
-# 
-# 
-# # Calculate snn density per flow
-# snn_densities <- numeric(nrow(snn_matrix_nd))
-# for (i in 1:nrow(matrix_knn_ind)) {
-# 	knn_indices <- matrix_knn_ind[i, ]
-# 	knn_indices <- knn_indices[!is.na(knn_indices)]
-# 	knn_indices <- knn_indices[knn_indices != i]
-# 	if(i==3){
-# 		print(knn_indices)
-# 		print(snn_matrix_nd[i, knn_indices])
-# 	}
-# 	if (length(knn_indices) > 0) {
-# 		snn_densities[i] <- sum(snn_matrix_nd[i, knn_indices] >= int_eps, na.rm = TRUE)
-# 	}
-# }
+df_sil_scores <- calc_geom_sil_score(sf_snn_nd[sf_snn_nd$cluster_id!=0,])
+
+df_sil_scores <- df_sil_scores %>%
+	group_by(cluster) %>%
+	summarise(mean_sil_score = mean(sil_width)) %>%
+	as.data.frame %>%
+	arrange(desc(mean_sil_score))
+
+top_clusters <- head(df_sil_scores$cluster,25)
+# df_sil_scores <- df_sil_scores[order(-df_sil_scores$sil_width), ]
+# df_sil_scores$flow_id <- factor(df_sil_scores$flow_id, levels = df_sil_scores$flow_id)
+# ggplot(data = df_sil_scores) +
+# 	geom_point(aes(x = as.factor(flow_id), y = sil_width))
+
+
+#calc_geom_sil_score(sf_trips_labelled[sf_trips_labelled$cluster_id!=0,])
+
+# Ground truth:
+ggplot(data = sf_trips_labelled[sf_trips_labelled$cluster_id!=0,]) +
+	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
+	theme_void()
+
+# Cluster result:
+ggplot(data = sf_snn_nd[sf_snn_nd$cluster_id!=0,]) +
+	geom_sf(aes(color = as.character(cluster_id), 
+							alpha = snn_density, 
+							size = snn_density)) +
+	labs(title=paste0("k",int_k, "_eps", eps, "_minpts", minpts, " - network_distance"))
+	
 ################################################################################
-# 4. Assign clusters using density connectivity mechanism
+# 4. Evaluate the results numerically
 ################################################################################
+ari <- mclust::adjustedRandIndex(sf_trips_labelled$cluster_id, sf_snn_nd$cluster_id)
+print(paste("Adjusted Rand Index:", ari))
+
+
