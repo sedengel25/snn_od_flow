@@ -64,16 +64,16 @@ r1_create_rkd_dt <- function(k_max, matrix_knn_dist) {
 	
 	for(k in 1:k_max){
 		col_idx = k
-		var_k = var(matrix_knn_dist[,col_idx]) %>% as.numeric
+		var_k = var(matrix_knn_dist[,col_idx], na.rm = TRUE) %>% as.numeric
 		num_variances[k] <- var_k
 		num_rks[k] <- r2_calc_rk(k = k)
 	}
-	
+
 	num_variances_k <- num_variances
 	num_variances_k_1 <- num_variances_k %>% lead
 	num_variances_k_1 <- num_variances_k_1[-length(num_variances_k_1)]
 	num_variances_k <- num_variances_k[-length(num_variances_k)]
-	
+
 	num_var_ratio <- num_variances_k_1/num_variances_k
 	num_theo_var_ratio <- num_rks[-length(num_rks)]
 	num_rkd <- num_var_ratio/ num_theo_var_ratio

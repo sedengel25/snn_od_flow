@@ -409,29 +409,48 @@ sf_network <- st_read(con, "col_2po_4pgr")
 sf_bbox <- st_convex_hull(st_union(sf_network))
 
 
-n_clusters <- 20
-n_noiseflows <- 3000
+################################################################################
+n_clusters_vals <- seq(10,50,5)
 
-sf_clusters <- create_synth_dataset(n_clusters = n_clusters, 
-															 n_noiseflows = n_noiseflows)
+param_grid <- data.frame()
 
-
-colors <- c(rgb(211/255, 211/255, 211/255, 0.5), rainbow(n_clusters))
-names(colors) <- c("0", as.character(1:n_clusters))
-
-ggplot(data = sf_clusters) +
-	geom_sf(data=sf_network) +
-	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
-	scale_color_manual(values = colors) +
-	theme_minimal() +
-	labs(color = "Cluster ID")
+for (n_clusters in n_clusters_vals) {
+	n_noiseflows_vals <- seq(1000,5000,250)
+	for (n_noiseflows in n_noiseflows_vals) {
+		param_grid <- rbind(param_grid, data.frame(n_clusters = n_clusters, 
+																							 n_noiseflows = n_noiseflows))
+	}
+}
 
 
+for(i in 1:nrow(param_grid)){
+	n_clusters <- param_grid[i, "n_clusters"]
+	n_noiseflows <- param_grid[i, "n_noiseflows"]
+	sf_clusters <- create_synth_dataset(n_clusters = n_clusters, 
+																			n_noiseflows = n_noiseflows)
+	
+	write_rds(sf_clusters, paste0("./data/experiment/",
+																n_clusters,
+																"_",
+																n_noiseflows,
+																".rds"))
+}
 
-write_rds(sf_clusters, paste0("./data/synthetic/network_distance/",
-															n_clusters,
-															"_",
-															n_noiseflows,
-															".rds"))
+
+
+
+# colors <- c(rgb(211/255, 211/255, 211/255, 0.5), rainbow(n_clusters))
+# names(colors) <- c("0", as.character(1:n_clusters))
+# 
+# ggplot(data = sf_clusters) +
+# 	geom_sf(data=sf_network) +
+# 	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
+# 	scale_color_manual(values = colors) +
+# 	theme_minimal() +
+# 	labs(color = "Cluster ID")
+
+
+
+
 
 

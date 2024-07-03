@@ -217,17 +217,19 @@ DataFrame process_networks(DataFrame dt_od_pts_sub,
 
 
 // [[Rcpp::export]]
-List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int eps, int int_k) {
+List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, int eps, int int_k) {
+	// Initiate variables
 	int n = dt_knn.nrow();
-
 	std::vector<int> flows;
 	std::vector<int> shared_densities;
 	List dr_flows(n);
 	
+	// Loop through all flows of dt_knn
 	for (int i = 0; i < n; ++i) {
 		int flow = dt_knn(i, 0); 
 
-		
+		// Inititate 'knn_i', which is a integer vector that gets filled with the knn
+		// of flow i
 		std::vector<int> knn_i;
 		std::vector<int> dr_flows_i;
 		for (int j = 1; j <= int_k; ++j) {
@@ -236,32 +238,34 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int ep
 			}
 		}
 		
+		// Sort that vector
 		std::sort(knn_i.begin(), knn_i.end());
 
-		
+		// Inititiate variable 'shared density'
 		int shared_density = 0;
-		int length_k = knn_i.size();
 		
-		
+		// Loop through all the knn-flows of flow i
 		for (int k : knn_i) {
 			
-			if (std::find(id.begin(), id.end(), k) != id.end()) {
-				int idx = std::find(id.begin(), id.end(), k) - id.begin();
+				// Subtract 1 by k to get the proper row in the matrix (c++ indexing starts at 0)
+				int idx = k - 1;
+			
+			// Inititate 'knn_k', which is a integer vector that gets filled with the knn
+			// of all flows k contained in 'knn_i'
 				std::vector<int> knn_k;
 				for (int m = 1; m <= int_k; ++m) {
 					if(dt_knn(idx, m)>0){
 						knn_k.push_back(dt_knn(idx, m));
 					}
-			
 				}
 				
 				
 
-				
-				std::sort(knn_i.begin(), knn_i.end());
+				// Sort that vector
 				std::sort(knn_k.begin(), knn_k.end());
 				
-				
+				// Initiate vector 'intersection' which contains the flows contained
+				// in both 'knn_i' and 'knn_k'
 				std::vector<int> intersection;
 				std::set_intersection(knn_i.begin(), 
                           knn_i.end(), 
@@ -269,11 +273,14 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int ep
                           knn_k.end(), 
                           std::back_inserter(intersection));
 
+				// If the length of 'intersection' is greater than 'eps', this means
+				// that the flows considered share more than 'eps' flows, which makes
+				// them 'directly reachable' per definition. Therefore, flow k is added 
+				// to 'dr_flows_i' and the density of flow i is increased by 1
 				if (intersection.size() >= eps) {
 					shared_density += 1;
 					dr_flows_i.push_back(k);
 				}
-			}
 		}
 		
 		
@@ -282,33 +289,38 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, IntegerVector id, int ep
 		dr_flows[i] = wrap(dr_flows_i);
 	}
 	
+	// Create the snn density dataframe
 	DataFrame snn_density = DataFrame::create(Named("flow") = flows, 
                                            Named("shared_density") = shared_densities);
 	
-	std::vector<int> from;   // Speichert die Indexwerte 
-	std::vector<int> dr_flows_final; // Speichert die Werte in den Vektoren
+
+
+	// We also want to have a dataframe containing the directly reachable flows for
+	// each flow:
+	// Initiate two integer-vectors that will form the 2 columns of the dataframe.
+	std::vector<int> from;   
+	std::vector<int> dr_flows_final; 
 	
-	Rcpp::Rcout << "flows.size(): " << flows.size() << std::endl;
-	Rcpp::Rcout << "dr_flows.size(): " << dr_flows.size() << std::endl;
-	// Durchgehen der Liste
+	// Loop through the 'dr_flows'-list to fill these two vectors
 	for (int i = 0; i < dr_flows.size(); i++) {
 		
+		// Extract the 'directly reachable' flows of flow i...
 		IntegerVector temp = as<IntegerVector>(dr_flows[i]);
-		// Füge den aktuellen Index so oft hinzu, wie es Elemente im Vektor gibt
 		if (temp.size() == 0) {
-			
 			continue;
 		}
+		// and fill the vectors 'from' and 'dr_flows_final'
 		for (int j = 0; j < temp.size(); j++) {
-			// -----------------------------------------------------------------------FLOWS STATT INDEX NEHMEN--------------------
-			from.push_back(flows[i]); // i + 1 für 1-basierte Indexierung
+			from.push_back(flows[i]); 
 			dr_flows_final.push_back(temp[j]);
 		}
 	}
 	
+	// Eventually, we have the second dataframe
 	DataFrame df_dr_flows = DataFrame::create(Named("from") = from, 
                                            Named("to") = dr_flows_final);
 	
+	// Return a list of both dataframes
 	List result = List::create(Named("snn_density") = snn_density, 
                             Named("dr_flows") = df_dr_flows);
 	
@@ -366,7 +378,7 @@ std::map<int, std::vector<int>> cpp_assign_clusters(DataFrame dt_cluster,
 	
 	//Initiate variables
 	IntegerVector flows = dt_cluster["flow"];
-	IntegerVector cluster_ids = dt_cluster["cluster_id"];
+	IntegerVector cluster_ids = dt_cluster["cluster_pred"];
 	int n = dt_cluster.nrows();
 	
 	// Loop through all flows contained in the cluster-dataframe...

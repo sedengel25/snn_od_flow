@@ -24,7 +24,8 @@ library(scales)
 library(dbscan)
 library(mclust)
 library(clue)
-#library(ClusterR)
+library(igraph)
+library(ClusterR)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
