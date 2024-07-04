@@ -262,6 +262,8 @@ calc_geom_dist_mat <- function(sf_trips, matrix_flow_dist) {
 	
 	# Combine all the matrices into one
 	final_dist_mat <- matrix_flow_dist_true_scaled + angle_diff_mat + length_diff_mat
+	
+	return(final_dist_mat)
 }
 
 
@@ -294,27 +296,49 @@ plot_optimal_k <- function(k_max, matrix_flow_distances) {
 
 
 
-
-
-calc_geom_sil_score <- function(sf_data) {
-
-	final_dist_mat <- calc_geom_dist_mat(sf_data)
-	
-	
+calc_sil_score <- function(sf_trips) {
 	# Calcualte silhoutte scores
-	df_sil_scores <- cluster::silhouette(sf_data$cluster_id, final_dist_mat) %>% 
+	if(length(unique(sf_trips$cluster_pred)) <= 1){
+		return(list("sil" = -1, 
+								"geom_sil" = -1))
+	}
+	sf_trips <- sf_trips[sf_trips$cluster_pred!=0,]
+	
+	sf_trips$origin <- lwgeom::st_startpoint(sf_trips$geometry)
+	sf_trips$dest <- lwgeom::st_endpoint(sf_trips$geometry)
+	
+	# Get distances between origin- and destination points...
+	origin_distances <- st_distance(sf_trips$origin, by_element = FALSE)
+	dest_distances <- st_distance(sf_trips$dest, by_element = FALSE)
+	
+	# ...in order to calculate a distance matrix for the flow
+	dist_mat <- drop_units(origin_distances + dest_distances) 
+	
+	df_sil_scores <- cluster::silhouette(sf_trips$cluster_pred, 
+																						dist_mat) %>% 
 		as.data.frame() 
 	
-	
-	df_sil_scores <- df_sil_scores %>%
-		mutate(flow_id = 1:nrow(df_sil_scores))
-	
-	df_sil_scores <- df_sil_scores %>%
-		arrange(desc(sil_width))
-	
+	if(ncol(df_sil_scores)!=3){
+		return(list("sil" = -1, 
+								"geom_sil" = -1))
+	}
 	average_sil_score <- mean(df_sil_scores[, 3])
-	return(df_sil_scores)
+	
+	geom_dist_mat <- calc_geom_dist_mat(sf_trips, dist_mat)
+	df_geom_sil_scores <- cluster::silhouette(sf_trips$cluster_pred, 
+																			 geom_dist_mat) %>% 
+		as.data.frame() 
+
+	if(ncol(df_geom_sil_scores)!=3){
+		return(list("sil" = -1, 
+								"geom_sil" = -1))
+	}
+	average_geom_sil_score <- mean(df_geom_sil_scores[, 3])
+	return(list("sil" = average_sil_score, 
+								 "geom_sil" = average_geom_sil_score))
 }
+
+
 
 
 

@@ -26,6 +26,10 @@ library(mclust)
 library(clue)
 library(igraph)
 library(ClusterR)
+library(plotly)
+library(clValid)
+library(cluster)
+library(fpc)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

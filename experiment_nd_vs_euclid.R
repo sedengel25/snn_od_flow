@@ -27,7 +27,7 @@ char_path_rds <- here::here("data", "experiment")
 char_files <- list.files(char_path_rds)
 char_files
 
-trip_file <- char_files[17]
+trip_file <- char_files[61]
 sf_trips_labelled <- read_rds(here::here(char_path_rds, trip_file)) 
 
 sf_trips_labelled
@@ -42,13 +42,9 @@ matrix_flow_nd_dist <- main_calc_flow_nd_dist_mat(sf_trips = sf_trips_labelled,
 																						 dt_dist_mat = dt_dist_mat)
 
 matrix_flow_euclid_dist <- main_calc_flow_euclid_dist_mat(sf_trips_labelled)
+matrix_flow_euclid_dist_geom <- calc_geom_dist_mat(sf_trips_labelled, 
+																										matrix_flow_euclid_dist)
 
-dt_snn_pred_nd <- snn_flow(flow_dist_mat = matrix_flow_nd_dist,
-													 k = 10,
-													 eps = 5,
-													 minpts = 5)
-
-cluster::silhouette(dt_snn_pred_nd$cluster_pred, matrix_flow_nd_dist)
 ################################################################################
 # 3. Find a good value for k based on the RKD plot
 ################################################################################
@@ -95,12 +91,12 @@ df_cluster_valid <- data.frame(
 	nmi = numeric(),
 	nvi = numeric(),
 	sil = numeric(),
-	geom_sil = numeric()
+	geom_sil = numeric(),
+	cdbw = numeric()
 )
 
 for(i in 1:nrow(param_grid)){
 	print(i)
-	
 	int_k <- param_grid[i, "k"]
 	int_eps <-  param_grid[i, "eps"]
 	int_minpts <- param_grid[i, "minpts"]
@@ -109,6 +105,10 @@ for(i in 1:nrow(param_grid)){
 																	 k = int_k,
 																	 eps = int_eps,
 																	 minpts = int_minpts)
+		sf_snn_euclid <- dt_snn_pred_euclid %>%
+			left_join(sf_trips_labelled %>% select(flow_id, geometry), 
+								by = c("flow" = "flow_id")) %>%
+			st_as_sf()
 		
 		cluster_valid_euclid <- lapply(char_methods, function(x){
 			idx_euclid <- ClusterR::external_validation(sf_trips_labelled$cluster_id,
@@ -121,16 +121,18 @@ for(i in 1:nrow(param_grid)){
 		df_cluster_valid[i, "eps"] <- int_eps
 		df_cluster_valid[i, "minpts"] <- int_minpts
 		df_cluster_valid[i, 5:13] <- sapply(cluster_valid_euclid, `[`, 1)
-		df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_trips_labelled,
-																											matrix_flow_dist = matrix_flow_euclid_dist)
-		df_cluster_valid[i, "geom_sil"] <- calc_geom_sil_score(sf_trips = sf_trips_labelled,
-																											matrix_flow_dist = matrix_flow_euclid_dist)
+		df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_snn_euclid)$sil
+		df_cluster_valid[i, "geom_sil"] <- calc_sil_score(sf_trips = sf_snn_euclid)$geom_sil
 	} else {
 		dt_snn_pred_nd <- snn_flow(flow_dist_mat = matrix_flow_nd_dist,
 															 k = int_k,
 															 eps = int_eps,
 															 minpts = int_minpts)
 		
+		sf_snn_nd <- dt_snn_pred_nd %>%
+			left_join(sf_trips_labelled %>% select(flow_id, geometry), 
+								by = c("flow" = "flow_id")) %>%
+			st_as_sf()
 		
 		cluster_valid_nd <- lapply(char_methods, function(x){
 			idx_nd <- ClusterR::external_validation(sf_trips_labelled$cluster_id,
@@ -143,15 +145,13 @@ for(i in 1:nrow(param_grid)){
 		df_cluster_valid[i, "eps"] <- int_eps
 		df_cluster_valid[i, "minpts"] <- int_minpts
 		df_cluster_valid[i, 5:13] <- sapply(cluster_valid_nd, `[`, 1)
-		df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_trips_labelled,
-																								 matrix_flow_dist = matrix_flow_nd_dist)
-		df_cluster_valid[i, "geom_sil"] <- calc_geom_sil_score(sf_trips = sf_trips_labelled,
-																													 matrix_flow_dist = matrix_flow_nd_dist)
+		df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_snn_nd)$sil
+		df_cluster_valid[i, "geom_sil"] <- calc_sil_score(sf_trips = sf_snn_nd)$geom_sil
 	}
 }
 write_rds(df_cluster_valid, here::here("data",
 																			 "cluster_validation_results",
-																			 paste0("cluster_val_ext_int", trip_file)))
+																			 paste0("cluster_val_ext_int_cdbw", trip_file)))
 
 head(df_cluster_valid)
 ################################################################################
@@ -250,6 +250,29 @@ plot_ly(
 				 	zaxis = list(title = "minpts")
 				 ))
 
+plot_ly(
+	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~sil,
+	type = 'scatter3d', mode = 'markers',
+	marker = list(size = 5)
+) %>%
+	layout(title = "Silhoutte coefficient for 'nd'",
+				 scene = list(
+				 	xaxis = list(title = "k"),
+				 	yaxis = list(title = "eps"),
+				 	zaxis = list(title = "minpts")
+				 ))
+
+plot_ly(
+	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~geom_sil,
+	type = 'scatter3d', mode = 'markers',
+	marker = list(size = 5)
+) %>%
+	layout(title = "Geometric Silhoutte coefficient for 'nd'",
+				 scene = list(
+				 	xaxis = list(title = "k"),
+				 	yaxis = list(title = "eps"),
+				 	zaxis = list(title = "minpts")
+				 ))
 # Euclidean distance
 plot_ly(
 	df_euclid_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~adj_rand,
@@ -264,4 +287,26 @@ plot_ly(
 				 ))
 
 
+plot_ly(
+	df_euclid_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~sil,
+	type = 'scatter3d', mode = 'markers',
+	marker = list(size = 5)
+) %>%
+	layout(title = "Silhoutte coefficient for 'euclid'",
+				 scene = list(
+				 	xaxis = list(title = "k"),
+				 	yaxis = list(title = "eps"),
+				 	zaxis = list(title = "minpts")
+				 ))
 
+plot_ly(
+	df_euclid_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~geom_sil,
+	type = 'scatter3d', mode = 'markers',
+	marker = list(size = 5)
+) %>%
+	layout(title = "Geometric Silhoutte coefficient for 'euclid'",
+				 scene = list(
+				 	xaxis = list(title = "k"),
+				 	yaxis = list(title = "eps"),
+				 	zaxis = list(title = "minpts")
+				 ))
