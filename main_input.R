@@ -46,7 +46,7 @@ sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
 
-int_buffer <- 3000
+int_buffer <- 100
 
 dt_dist_mat <- calc_local_node_dist_mat(buffer = int_buffer)
 

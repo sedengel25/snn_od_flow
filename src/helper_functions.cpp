@@ -1,217 +1,194 @@
 #include <Rcpp.h>
-#include <fstream>
-//#include <gperftools/heap-profiler.h>
+// [[Rcpp::depends(RcppParallel)]]
+#include <RcppParallel.h>
+#include <map>
+#include <mutex>
+
 using namespace Rcpp;
+using namespace RcppParallel;
 
+bool dist_map_loaded = false; 
+std::mutex mtx; // Mutex für thread-sicheren Zugriff
 
-// Hier wird der R-dataframe, der das road network angibt übergeben und in ein
-// C++ Objekt umgewandelt: 
-	// Die einzelnen Spalten werden erst als einfache C++ Integer-Vektoren gespeichert. 
-// Dann werden "map" und "pair" kombiniert um für jede id des road networks source
-// und target zu hinterlegen.
-std::map<int, std::pair<int, int>> create_network_map(DataFrame network) {
-	IntegerVector ids = network["id"];
-	IntegerVector sources = network["source"];
-	IntegerVector targets = network["target"];
-	std::map<int, std::pair<int, int>> net_map;
+// Hilfsfunktion zur Erstellung der Netzwerk-Map
+std::map<int, std::pair<int, int>> create_network_map(DataFrame dt_network) {
+	IntegerVector ids = dt_network["id"];
+	IntegerVector starts = dt_network["source"];
+	IntegerVector ends = dt_network["target"];
+	std::map<int, std::pair<int, int>> network_map;
 	for (int i = 0; i < ids.size(); i++) {
-		net_map[ids[i]] = std::make_pair(sources[i], targets[i]);
+		network_map[ids[i]] = std::make_pair(starts[i], ends[i]);
 	}
-	return net_map;
+	return network_map;
 }
 
-// Hier wird der R-dataframe, der die local node distance matrix angibt übergeben 
-// und in ein C++ Objekt umgewandelt: 
-	// Die einzelnen Spalten werden erst als einfache C++ Integer- und Numeric-Vektoren gespeichert. 
-// Dann werden "map" und "pair" kombiniert um für jedes node poir die entsprechende
-// Netzwerk-Distanz als double zu hinterlegen.
-std::map<std::pair<int, int>, int> create_dist_map(DataFrame dist_mat) {
-	IntegerVector sources = dist_mat["source"];
-	IntegerVector targets = dist_mat["target"];
-	IntegerVector m = dist_mat["m"];
-	std::map<std::pair<int, int>, int> dist_map;
-	for (int i = 0; i < sources.size(); i++) {
-		int min_idx = std::min(sources[i], targets[i]);
-		int max_idx = std::max(sources[i], targets[i]);
-		dist_map[std::make_pair(min_idx, max_idx)] = m[i];
+// Globale Variable für die std::map
+std::map<std::pair<int, int>, int> dist_map;
+std::once_flag map_initialized; // Flag für einmalige Initialisierung
+
+// Funktion zum Laden der dist_map
+void initialize_map(DataFrame dt_dist_mat) {
+	IntegerVector sources = dt_dist_mat["source"];
+	IntegerVector targets = dt_dist_mat["target"];
+	IntegerVector distances = dt_dist_mat["m"];
+	
+	for (int i = 0; i < sources.size(); ++i) {
+		int source = sources[i];
+		int target = targets[i];
+		int distance = distances[i];
+		dist_map[std::make_pair(std::min(source, target), std::max(source, target))] = distance;
 	}
-	return dist_map;
 }
 
-// Funktion, die in der C++ dist-mat-map nach dem übergegeben node-pair sucht und
-// dann die entsprechende Netzwerk-Distanz zurückgibt.
-// "end()" zeigt auf das letzte Element einer map. Wenn mit "find()" kein Wert in 
-// der Distanz-Matrix gefunden wurde, dann zeigt "it" auf das Ende der map. Wenn
-// also it!=dist_map.end(), dann wird mit "second" auf das zweite Element des Paares
-// it zugegriffen, was der Distanz entspricht. Andernfalls, wenn für gegeben source
-// und target kein Eintrag gefunden wurde, dann wird -1 zurückgegeben
-double get_distance(const std::map<std::pair<int, int>, int>& dist_map, int source, int target) {
-	auto it = dist_map.find(std::make_pair(std::min(source, target), 
-                                        std::max(source, target)));
+// Funktion zum Abrufen der Distanz
+double get_distance(int source, int target) {
+	auto it = dist_map.find(std::make_pair(std::min(source, target), std::max(source, target)));
 	return (it != dist_map.end()) ? it->second : -1.0;
 }
 
-void printMemoryUsage(const std::string& note) {
-	std::ifstream file("/proc/self/status");
-	std::string line;
-	while (std::getline(file, line)) {
-		if (line.substr(0, 6) == "VmSize") {
-			Rcpp::Rcout << note << " " << line << "\n";
-			break;
+// Struktur zur parallelen Verarbeitung von Netzwerken
+struct NetworkProcessor : public Worker {
+	const IntegerVector& od_pts_full_id;
+	const IntegerVector& od_pts_full_line_id;
+	const IntegerVector& od_pts_full_start;
+	const IntegerVector& od_pts_full_end;
+	const std::map<int, std::pair<int, int>>& network_map;
+	
+	std::vector<int>& from_points;
+	std::vector<int>& to_points;
+	std::vector<int>& distances;
+	
+	NetworkProcessor(const IntegerVector& od_pts_full_id,
+                  const IntegerVector& od_pts_full_line_id,
+                  const IntegerVector& od_pts_full_start,
+                  const IntegerVector& od_pts_full_end,
+                  const std::map<int, std::pair<int, int>>& network_map,
+                  std::vector<int>& from_points,
+                  std::vector<int>& to_points,
+                  std::vector<int>& distances)
+		: od_pts_full_id(od_pts_full_id),
+    od_pts_full_line_id(od_pts_full_line_id),
+    od_pts_full_start(od_pts_full_start),
+    od_pts_full_end(od_pts_full_end),
+    network_map(network_map),
+    from_points(from_points),
+    to_points(to_points),
+    distances(distances) {}
+	
+	void operator()(std::size_t begin, std::size_t end) {
+		Rcpp::Rcout << "Processing from " << begin << " to " << end << std::endl;
+		for (std::size_t i = begin; i < end; ++i) {
+
+			
+			int point_ij = od_pts_full_id[i];
+			int line_ij = od_pts_full_line_id[i];
+			int start_ij = od_pts_full_start[i];
+			int end_ij = od_pts_full_end[i];
+			
+			auto it_ij = network_map.find(line_ij);
+
+			
+			int source_ij = it_ij->second.first;
+			int target_ij = it_ij->second.second;
+			
+			
+			for (std::size_t j = 0; j < od_pts_full_id.size(); ++j) {
+
+				
+				int point_kl = od_pts_full_id[j];
+				int line_kl = od_pts_full_line_id[j];
+				int start_kl = od_pts_full_start[j];
+				int end_kl = od_pts_full_end[j];
+				
+				
+				if (point_ij == point_kl) continue;
+				
+				auto it_kl = network_map.find(line_kl);
+
+				
+				if (it_ij == it_kl) {
+					int om_on_distance_diff = start_kl - start_ij;
+					int om_on_distance = std::abs(om_on_distance_diff);
+					std::lock_guard<std::mutex> guard(mtx); // Mutex-Sperre
+					from_points.push_back(point_ij);
+					to_points.push_back(point_kl);
+					distances.push_back(om_on_distance);
+					continue;
+				}
+				
+				int source_kl = it_kl->second.first;
+				int target_kl = it_kl->second.second;
+				
+				int nd_ik = get_distance(source_ij, source_kl);
+				int nd_jl = get_distance(target_ij, target_kl);
+				int nd_il = get_distance(source_ij, target_kl);
+				int nd_jk = get_distance(source_kl, target_ij);
+				
+				if (nd_ik == -1.0 || nd_jl == -1.0 || nd_il == -1.0 || nd_jk == -1.0) continue;
+				
+				int om_on_distance = std::min({
+					start_ij + start_kl + nd_ik,
+					end_ij + end_kl + nd_jl,
+					start_ij + end_kl + nd_il,
+					end_ij + start_kl + nd_jk
+				});
+				
+				std::lock_guard<std::mutex> guard(mtx); // Mutex-Sperre
+				from_points.push_back(point_ij);
+				to_points.push_back(point_kl);
+				distances.push_back(om_on_distance);
+			}
 		}
 	}
-}
+};
 
-
-template <typename T>
-void printVectorSize(const std::vector<T>& v, const std::string& name) {
-	Rcpp::Rcout << "Memory usage of " << name << ": " << (v.capacity() * sizeof(T)) / 1024.0 << " KB" << std::endl;
-}
-
-template <typename T>
-void printActualVectorSize(const std::vector<T>& v, const std::string& name) {
-	Rcpp::Rcout << "Actual memory usage of " << name << ": " 
-             << (v.size() * sizeof(T)) / 1024.0 << " KB" << std::endl;
-}
-
+// Funktion zur parallelen Verarbeitung von Netzwerken
 // [[Rcpp::export]]
-void checkInput(DataFrame df) {
-	IntegerVector ids = df["id"];
-	Rcout << "Erste 10 'line_id' Werte: ";
-	for (int i = 0; i < 10; ++i) {
-		Rcout << ids[i] << " ";
-	}
-	Rcout << std::endl;
-	IntegerVector line_ids = df["id_edge"];
-	Rcout << "Erste 10 'line_id' Werte: ";
-	for (int i = 0; i < 10; ++i) {
-		Rcout << line_ids[i] << " ";
-	}
-	Rcout << std::endl;
-	IntegerVector starts = df["dist_to_start"];
-	Rcout << "Erste 10 'line_id' Werte: ";
-	for (int i = 0; i < 10; ++i) {
-		Rcout << starts[i] << " ";
-	}
-	Rcout << std::endl;
-	IntegerVector ends = df["dist_to_end"];
-	Rcout << "Erste 10 'line_id' Werte: ";
-	for (int i = 0; i < 10; ++i) {
-		Rcout << ends[i] << " ";
-	}
-	Rcout << std::endl;
-}
-
-// [[Rcpp::export]]
-DataFrame process_networks(DataFrame dt_od_pts_sub, 
-													 DataFrame dt_od_pts_full, 
-													 DataFrame dt_network, 
-													 DataFrame dt_dist_mat) {
+DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
+                                    DataFrame dt_network,
+                                    DataFrame dt_dist_mat,
+                                    int num_cores) {
+	// Initialisiere die dist_map einmal
+	std::call_once(map_initialized, initialize_map, dt_dist_mat);
+	Rcpp::Rcout << "Done initialising dist_map\n";
 	
-	//Split R-dataframes in C++ vectors
-	IntegerVector od_pts_sub_id = dt_od_pts_sub["id"];
-	IntegerVector od_pts_sub_line_id = dt_od_pts_sub["id_edge"];
-	IntegerVector od_pts_sub_start = dt_od_pts_sub["dist_to_start"];
-	IntegerVector od_pts_sub_end = dt_od_pts_sub["dist_to_end"];
 	IntegerVector od_pts_full_id = dt_od_pts_full["id"];
 	IntegerVector od_pts_full_line_id = dt_od_pts_full["id_edge"];
 	IntegerVector od_pts_full_start = dt_od_pts_full["dist_to_start"];
 	IntegerVector od_pts_full_end = dt_od_pts_full["dist_to_end"];
 	
 	auto network_map = create_network_map(dt_network);
-	auto dist_map = create_dist_map(dt_dist_mat);
-	
-	int n_sub = od_pts_sub_id.size();
-	int n_full = od_pts_full_id.size();
 	
 	std::vector<int> from_points;
 	std::vector<int> to_points;
 	std::vector<int> distances;
-	from_points.reserve(n_sub * 10); 
-	to_points.reserve(n_sub * 10);
-	distances.reserve(n_sub * 10);;
-
-	for (int i = 0; i < n_sub; ++i) {
-
-		int point_ij = od_pts_sub_id[i];
-		int line_ij = od_pts_sub_line_id[i];
-		int start_ij = od_pts_sub_start[i];
-		int end_ij = od_pts_sub_end[i];
-
-		
-		//if (network_map.find(line_ij) == network_map.end()) continue;
-		
-		int source_ij = network_map[line_ij].first;
-		int target_ij = network_map[line_ij].second;
-
-		
-		// Rcpp::Rcout << "From point: " << i << std::endl;
-		
-		for (int j = i; j < n_full; ++j) {
-			int point_kl = od_pts_full_id[j];
-
-			int line_kl = od_pts_full_line_id[j];
-			int start_kl = od_pts_full_start[j];
-			int end_kl = od_pts_full_end[j];
-			
-			// Skip, if points considered are the same
-			if (point_ij == point_kl) continue;
-			
-			// Case: points are on the same line
-			if (network_map.find(line_ij) == network_map.find(line_kl)){
-				int om_on_distance_diff = start_kl - start_ij;
-				int om_on_distance = std::abs(om_on_distance_diff);  
-				from_points.push_back(point_ij);
-				to_points.push_back(point_kl);
-				distances.push_back(om_on_distance);
-				continue;
-			};
-
-			
-			// Case: points are on different lines
-			int source_kl = network_map[line_kl].first;
-			int target_kl = network_map[line_kl].second;
-			int nd_ik = get_distance(dist_map, source_ij, source_kl);
-			int nd_jl = get_distance(dist_map, target_ij, target_kl);
-			int nd_il = get_distance(dist_map, source_ij, target_kl);
-			int nd_jk = get_distance(dist_map, source_kl, target_ij);
-
-			// If one of the points involved lies on 
-			if (nd_ik == -1.0 || 
-          nd_jl == -1.0 || 
-          nd_il == -1.0 || 
-          nd_jk == -1.0) continue;
-
-			int om_on_distance = std::min({
-				start_ij + start_kl + nd_ik,
-				end_ij + end_kl + nd_jl,
-				start_ij + end_kl + nd_il,
-				end_ij + start_kl + nd_jk
-			});
-
-			
-			from_points.push_back(point_ij);
-			to_points.push_back(point_kl);
-			distances.push_back(om_on_distance);
-
-			
-		}
-		if (i % 100 == 0) {  
-			printVectorSize(from_points, "from_points during");
-			printVectorSize(to_points, "to_points during");
-			printVectorSize(distances, "distances during");
-			printActualVectorSize(from_points, "from_points during");
-			printActualVectorSize(to_points, "to_points during");
-			printActualVectorSize(distances, "distances during");
-		}
-		
+	
+	// Berechnung der Chunk-Größe
+	std::size_t chunk_size = (od_pts_full_id.size() + num_cores - 1) / num_cores;
+	Rcpp::Rcout << "Chunk size: " << chunk_size << std::endl;
+	
+	// Initialisieren des Workers
+	NetworkProcessor worker(od_pts_full_id, od_pts_full_line_id, od_pts_full_start, od_pts_full_end,
+                         network_map, from_points, to_points, distances);
+	
+	// Parallele Verarbeitung der Blöcke
+	Rcpp::Rcout << "Done initialising worker\n";
+	parallelFor(0, od_pts_full_id.size(), worker, chunk_size);
+	
+	// Überprüfen der Längen der Vektoren
+	Rcpp::Rcout << "from_points.size(): " << from_points.size() << std::endl;
+	Rcpp::Rcout << "to_points.size(): " << to_points.size() << std::endl;
+	Rcpp::Rcout << "distances.size(): " << distances.size() << std::endl;
+	
+	// Überprüfen, ob die Vektoren die gleiche Länge haben
+	if (from_points.size() != to_points.size() || from_points.size() != distances.size()) {
+		Rcpp::stop("Die Längen der Vektoren sind unterschiedlich.");
 	}
-	return DataFrame::create(Named("from") = from_points, 
-													 Named("to") = to_points, 
-													 Named("distance") = distances);
-
+	
+	return DataFrame::create(Named("from") = from_points,
+                          Named("to") = to_points,
+                          Named("distance") = distances);
 }
-
 
 
 
@@ -227,7 +204,7 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, int eps, int int_k) {
 	// Loop through all flows of dt_knn
 	for (int i = 0; i < n; ++i) {
 		int flow = dt_knn(i, 0); 
-
+		
 		// Inititate 'knn_i', which is a integer vector that gets filled with the knn
 		// of flow i
 		std::vector<int> knn_i;
@@ -240,47 +217,47 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, int eps, int int_k) {
 		
 		// Sort that vector
 		std::sort(knn_i.begin(), knn_i.end());
-
+		
 		// Inititiate variable 'shared density'
 		int shared_density = 0;
 		
 		// Loop through all the knn-flows of flow i
 		for (int k : knn_i) {
 			
-				// Subtract 1 by k to get the proper row in the matrix (c++ indexing starts at 0)
-				int idx = k - 1;
+			// Subtract 1 by k to get the proper row in the matrix (c++ indexing starts at 0)
+			int idx = k - 1;
 			
 			// Inititate 'knn_k', which is a integer vector that gets filled with the knn
 			// of all flows k contained in 'knn_i'
-				std::vector<int> knn_k;
-				for (int m = 1; m <= int_k; ++m) {
-					if(dt_knn(idx, m)>0){
-						knn_k.push_back(dt_knn(idx, m));
-					}
+			std::vector<int> knn_k;
+			for (int m = 1; m <= int_k; ++m) {
+				if(dt_knn(idx, m)>0){
+					knn_k.push_back(dt_knn(idx, m));
 				}
-				
-				
-
-				// Sort that vector
-				std::sort(knn_k.begin(), knn_k.end());
-				
-				// Initiate vector 'intersection' which contains the flows contained
-				// in both 'knn_i' and 'knn_k'
-				std::vector<int> intersection;
-				std::set_intersection(knn_i.begin(), 
-                          knn_i.end(), 
-                          knn_k.begin(), 
-                          knn_k.end(), 
-                          std::back_inserter(intersection));
-
-				// If the length of 'intersection' is greater than 'eps', this means
-				// that the flows considered share more than 'eps' flows, which makes
-				// them 'directly reachable' per definition. Therefore, flow k is added 
-				// to 'dr_flows_i' and the density of flow i is increased by 1
-				if (intersection.size() >= eps) {
-					shared_density += 1;
-					dr_flows_i.push_back(k);
-				}
+			}
+			
+			
+			
+			// Sort that vector
+			std::sort(knn_k.begin(), knn_k.end());
+			
+			// Initiate vector 'intersection' which contains the flows contained
+			// in both 'knn_i' and 'knn_k'
+			std::vector<int> intersection;
+			std::set_intersection(knn_i.begin(), 
+                         knn_i.end(), 
+                         knn_k.begin(), 
+                         knn_k.end(), 
+                         std::back_inserter(intersection));
+			
+			// If the length of 'intersection' is greater than 'eps', this means
+			// that the flows considered share more than 'eps' flows, which makes
+			// them 'directly reachable' per definition. Therefore, flow k is added 
+			// to 'dr_flows_i' and the density of flow i is increased by 1
+			if (intersection.size() >= eps) {
+				shared_density += 1;
+				dr_flows_i.push_back(k);
+			}
 		}
 		
 		
@@ -293,8 +270,8 @@ List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, int eps, int int_k) {
 	DataFrame snn_density = DataFrame::create(Named("flow") = flows, 
                                            Named("shared_density") = shared_densities);
 	
-
-
+	
+	
 	// We also want to have a dataframe containing the directly reachable flows for
 	// each flow:
 	// Initiate two integer-vectors that will form the 2 columns of the dataframe.
@@ -355,9 +332,9 @@ std::map<int, std::vector<int>> cpp_create_knn_list_from_r_df(DataFrame df) {
 
 // [[Rcpp::export]]
 std::map<int, std::vector<int>> cpp_assign_clusters(DataFrame dt_cluster,
-																										DataFrame dt_knn_r,
-																										IntegerVector flows_reachable_from_core_flow,
-																										int int_k) {
+                                                    DataFrame dt_knn_r,
+                                                    IntegerVector flows_reachable_from_core_flow,
+                                                    int int_k) {
 	
 	// Convert knn-df into a C++-map
 	IntegerVector flow_ref = dt_knn_r["flow_ref"];
@@ -390,8 +367,8 @@ std::map<int, std::vector<int>> cpp_assign_clusters(DataFrame dt_cluster,
 		std::vector<int> knn_flows = knn_map.at(flow_i);
 		// Check if flow is reachable and has no cluster...
 		if (cluster_i == 0 && std::find(flows_reachable_from_core_flow.begin(),
-																		flows_reachable_from_core_flow.end(),
-																		flow_i) != flows_reachable_from_core_flow.end()) {
+                                  flows_reachable_from_core_flow.end(),
+                                  flow_i) != flows_reachable_from_core_flow.end()) {
 			
 			//...if so, we loop through the corresponding knn-flows... 
 			for (int j = 0; j < int_k; ++j) {
@@ -410,9 +387,9 @@ std::map<int, std::vector<int>> cpp_assign_clusters(DataFrame dt_cluster,
 				}
 			}
 		} else if (cluster_i != 0 && 
-							 std::find(flows_reachable_from_core_flow.begin(), 
-							 					flows_reachable_from_core_flow.end(), 
-							 					flow_i) != flows_reachable_from_core_flow.end()) {
+			std::find(flows_reachable_from_core_flow.begin(), 
+             flows_reachable_from_core_flow.end(), 
+             flow_i) != flows_reachable_from_core_flow.end()) {
 			cluster_map[cluster_i].push_back(flow_i);
 		}
 	}

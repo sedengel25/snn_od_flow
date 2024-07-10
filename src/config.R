@@ -30,6 +30,8 @@ library(plotly)
 library(clValid)
 library(cluster)
 library(fpc)
+library(bigmemory)
+library(bigmemory.sri)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

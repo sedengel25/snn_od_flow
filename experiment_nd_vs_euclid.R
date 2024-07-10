@@ -4,49 +4,120 @@ source("./main_functions.R")
 
 
 
-
-
-
-
 ################################################################################
-# 1. Input data 
+# 1. Network data
 ################################################################################
 char_city <- "col"
 dt_network <- st_read(con, paste0(char_city,
 																	"_2po_4pgr")) %>% as.data.table
-
-char_files <- list.files(here::here("data", "input"))
-char_files
-dt_dist_mat <- read_rds(here::here("data",
-																	 "input",
-																	 char_files[2]))
+char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
+char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[2]
+char_buffer <- strsplit(char_dt_dist_mat, "_")[[1]][2]
+dt_dist_mat <- read_rds(here::here(
+	char_path_dt_dist_mat,
+	char_dt_dist_mat))
+# m-Spalte runden und in Integer umwandeln
 dt_dist_mat <- dt_dist_mat %>%
-	mutate(m = round(m,0) %>% as.integer)
-
-char_path_rds <- here::here("data", "experiment")
-char_files <- list.files(char_path_rds)
-char_files
-
-trip_file <- char_files[61]
-sf_trips_labelled <- read_rds(here::here(char_path_rds, trip_file)) 
-
-sf_trips_labelled
+	mutate(m = round(m, 0) %>% as.integer())
 
 
+# # Erzeuge eine Shared BigMatrix im RAM
+# bigmat <- big.matrix(
+# 	nrow = nrow(dt_dist_mat),
+# 	ncol = ncol(dt_dist_mat),
+# 	type = "integer",
+# 	shared = TRUE,
+# 	dimnames = list(NULL, colnames(dt_dist_mat))
+# )
+# 
+# # Fülle die BigMatrix mit den Werten aus der Datentabelle
+# bigmat[,] <- as.matrix(dt_dist_mat)
+# 
+# # Entferne die ursprüngliche Datentabelle, um RAM freizugeben
+# rm(dt_dist_mat)
+
+# 
+# # Speichern des Deskriptor-Dateipfads für späteren Zugriff
+# descFile <- "dist_mat.desc"
+# desc <- describe(bigmat)
+# dput(desc, file = descFile)
+# 
+# # Lade die BigMatrix erneut für gemeinsamen Speicherzugriff
+# bigmat_shared <- attach.big.matrix(desc)
+# rm(bigmat)
+# gc()
+
+# Initialisiere die std::map einmal
+# Hinweis: Hier wird die Karte nur einmal geladen
+# initialize_map_once(bigmat_shared@address)
+# save_dist_map("dist_map.bin")
+
+
+	
+char_path_trips <- here::here("data", "experiment")
+char_trip_files <- list.files(char_path_trips)
+trip_file <- char_trip_files[1]
+
+
+char_path_cpp_maps<- here::here("data", "input", "cpp_map_dist_mat")
+char_map_file <- here::here(char_path_cpp_maps,
+														paste0(char_city,
+																	 "_",
+																	 char_buffer,
+																	 ".bin"))
 
 ################################################################################
-# 2. Calculate network distances between OD flows and put it into a matrix
+# 2. Trip data 
 ################################################################################
-matrix_flow_nd_dist <- main_calc_flow_nd_dist_mat(sf_trips = sf_trips_labelled,
-																						 dt_network = dt_network,
-																						 dt_dist_mat = dt_dist_mat)
+sf_trips_labelled <- read_rds(here::here(char_path_trips, trip_file)) 
 
+sf_trips_labelled$origin_geom <- lwgeom::st_startpoint(sf_trips_labelled$geometry)
+sf_trips_labelled$dest_geom <- lwgeom::st_endpoint(sf_trips_labelled$geometry)
+
+
+dt_origin <- sf_trips_labelled %>%
+	st_set_geometry("origin_geom") %>%
+	select(flow_id, origin_id, origin_geom) %>%
+	rename("id" = "flow_id",
+				 "id_edge" = "origin_id",
+				 "geom" = "origin_geom") %>%
+	as.data.table()
+
+dt_origin <- add_dist_start_end(dt_origin)
+
+dt_dest <- sf_trips_labelled %>%
+	st_set_geometry("dest_geom") %>%
+	select(flow_id, dest_id, dest_geom) %>%
+	rename("id" = "flow_id",
+				 "id_edge" = "dest_id",
+				 "geom" = "dest_geom") %>% 
+	as.data.table
+
+dt_dest <- add_dist_start_end(dt_dest)
+
+
+
+dt_network <- dt_network %>%
+	select(source, target, id, geom_way)
+
+################################################################################
+# 3. Calculate network distances between OD flows and put it into a matrix
+################################################################################
+cores <- 14
+RcppParallel::setThreadOptions(numThreads = cores)
+matrix_flow_nd_dist <- parallel_process_networks(dt_origin, 
+																								 dt_network,
+																								 dt_dist_mat,
+																								 cores)
+
+stop("RcppParallel succesfull")
 matrix_flow_euclid_dist <- main_calc_flow_euclid_dist_mat(sf_trips_labelled)
 matrix_flow_euclid_dist_geom <- calc_geom_dist_mat(sf_trips_labelled, 
 																										matrix_flow_euclid_dist)
 
 ################################################################################
-# 3. Find a good value for k based on the RKD plot
+# 4. Find a good value for k based on the RKD plot
 ################################################################################
 # int_k_max <- 50
 # 
@@ -55,7 +126,7 @@ matrix_flow_euclid_dist_geom <- calc_geom_dist_mat(sf_trips_labelled,
 
 
 ################################################################################
-# 4. Set up possible parameter-combinations
+# 5. Set up possible parameter-combinations (Experiment part)
 ################################################################################
 param_grid <- expand.grid(k = c(10,15,20,25,30,35,40,45,50),
 						eps = c(5,10,15,20,25,30,35,40,45),
