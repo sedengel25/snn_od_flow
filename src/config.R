@@ -12,7 +12,7 @@ library(sf)
 library(reticulate)
 library(data.table)
 library(Rcpp)
-library(RcppParallel)
+library(RcppThread)
 library(readr)
 library(lubridate)
 library(profvis)
@@ -30,8 +30,6 @@ library(plotly)
 library(clValid)
 library(cluster)
 library(fpc)
-library(bigmemory)
-library(bigmemory.sri)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -61,7 +59,7 @@ if(!exists("con")){
 char_os <-   Sys.info()["sysname"] %>% as.character()
 int_cores <- detectCores()-2
 
-
+RcppParallel::setThreadOptions(numThreads = int_cores)
 
 ################################################################################
 # External software required

@@ -7,8 +7,7 @@
 using namespace Rcpp;
 using namespace RcppParallel;
 
-bool dist_map_loaded = false; 
-std::mutex mtx; // Mutex für thread-sicheren Zugriff
+std::once_flag map_initialized; // Flag für einmalige Initialisierung
 
 // Hilfsfunktion zur Erstellung der Netzwerk-Map
 std::map<int, std::pair<int, int>> create_network_map(DataFrame dt_network) {
@@ -22,16 +21,11 @@ std::map<int, std::pair<int, int>> create_network_map(DataFrame dt_network) {
 	return network_map;
 }
 
-// Globale Variable für die std::map
-std::map<std::pair<int, int>, int> dist_map;
-std::once_flag map_initialized; // Flag für einmalige Initialisierung
-
 // Funktion zum Laden der dist_map
-void initialize_map(DataFrame dt_dist_mat) {
+void initialize_map(std::map<std::pair<int, int>, int>& dist_map, DataFrame dt_dist_mat) {
 	IntegerVector sources = dt_dist_mat["source"];
 	IntegerVector targets = dt_dist_mat["target"];
 	IntegerVector distances = dt_dist_mat["m"];
-	
 	for (int i = 0; i < sources.size(); ++i) {
 		int source = sources[i];
 		int target = targets[i];
@@ -41,7 +35,7 @@ void initialize_map(DataFrame dt_dist_mat) {
 }
 
 // Funktion zum Abrufen der Distanz
-double get_distance(int source, int target) {
+double get_distance(const std::map<std::pair<int, int>, int>& dist_map, int source, int target) {
 	auto it = dist_map.find(std::make_pair(std::min(source, target), std::max(source, target)));
 	return (it != dist_map.end()) ? it->second : -1.0;
 }
@@ -53,63 +47,62 @@ struct NetworkProcessor : public Worker {
 	const IntegerVector& od_pts_full_start;
 	const IntegerVector& od_pts_full_end;
 	const std::map<int, std::pair<int, int>>& network_map;
+	const std::map<std::pair<int, int>, int>& dist_map;
 	
 	std::vector<int>& from_points;
 	std::vector<int>& to_points;
 	std::vector<int>& distances;
+	std::mutex& mtx; // Mutex für thread-sicheren Zugriff
 	
 	NetworkProcessor(const IntegerVector& od_pts_full_id,
                   const IntegerVector& od_pts_full_line_id,
                   const IntegerVector& od_pts_full_start,
                   const IntegerVector& od_pts_full_end,
                   const std::map<int, std::pair<int, int>>& network_map,
+                  const std::map<std::pair<int, int>, int>& dist_map,
                   std::vector<int>& from_points,
                   std::vector<int>& to_points,
-                  std::vector<int>& distances)
+                  std::vector<int>& distances,
+                  std::mutex& mtx)
 		: od_pts_full_id(od_pts_full_id),
     od_pts_full_line_id(od_pts_full_line_id),
     od_pts_full_start(od_pts_full_start),
     od_pts_full_end(od_pts_full_end),
     network_map(network_map),
+    dist_map(dist_map),
     from_points(from_points),
     to_points(to_points),
-    distances(distances) {}
+    distances(distances),
+    mtx(mtx) {}
 	
 	void operator()(std::size_t begin, std::size_t end) {
-		Rcpp::Rcout << "Processing from " << begin << " to " << end << std::endl;
 		for (std::size_t i = begin; i < end; ++i) {
-
-			
 			int point_ij = od_pts_full_id[i];
 			int line_ij = od_pts_full_line_id[i];
 			int start_ij = od_pts_full_start[i];
 			int end_ij = od_pts_full_end[i];
 			
 			auto it_ij = network_map.find(line_ij);
-
+			if (it_ij == network_map.end()) continue;
 			
 			int source_ij = it_ij->second.first;
 			int target_ij = it_ij->second.second;
 			
-			
-			for (std::size_t j = 0; j < od_pts_full_id.size(); ++j) {
-
-				
+			for (std::size_t j = i; j < od_pts_full_id.size(); ++j) {
 				int point_kl = od_pts_full_id[j];
 				int line_kl = od_pts_full_line_id[j];
 				int start_kl = od_pts_full_start[j];
 				int end_kl = od_pts_full_end[j];
 				
-				
 				if (point_ij == point_kl) continue;
 				
 				auto it_kl = network_map.find(line_kl);
-
+				if (it_kl == network_map.end()) continue;
 				
 				if (it_ij == it_kl) {
 					int om_on_distance_diff = start_kl - start_ij;
 					int om_on_distance = std::abs(om_on_distance_diff);
-					std::lock_guard<std::mutex> guard(mtx); // Mutex-Sperre
+					std::lock_guard<std::mutex> guard(mtx);
 					from_points.push_back(point_ij);
 					to_points.push_back(point_kl);
 					distances.push_back(om_on_distance);
@@ -119,10 +112,10 @@ struct NetworkProcessor : public Worker {
 				int source_kl = it_kl->second.first;
 				int target_kl = it_kl->second.second;
 				
-				int nd_ik = get_distance(source_ij, source_kl);
-				int nd_jl = get_distance(target_ij, target_kl);
-				int nd_il = get_distance(source_ij, target_kl);
-				int nd_jk = get_distance(source_kl, target_ij);
+				int nd_ik = get_distance(dist_map, source_ij, source_kl);
+				int nd_jl = get_distance(dist_map, target_ij, target_kl);
+				int nd_il = get_distance(dist_map, source_ij, target_kl);
+				int nd_jk = get_distance(dist_map, source_kl, target_ij);
 				
 				if (nd_ik == -1.0 || nd_jl == -1.0 || nd_il == -1.0 || nd_jk == -1.0) continue;
 				
@@ -133,7 +126,7 @@ struct NetworkProcessor : public Worker {
 					end_ij + start_kl + nd_jk
 				});
 				
-				std::lock_guard<std::mutex> guard(mtx); // Mutex-Sperre
+				std::lock_guard<std::mutex> guard(mtx);
 				from_points.push_back(point_ij);
 				to_points.push_back(point_kl);
 				distances.push_back(om_on_distance);
@@ -148,9 +141,9 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
                                     DataFrame dt_network,
                                     DataFrame dt_dist_mat,
                                     int num_cores) {
-	// Initialisiere die dist_map einmal
-	std::call_once(map_initialized, initialize_map, dt_dist_mat);
-	Rcpp::Rcout << "Done initialising dist_map\n";
+	
+	static std::map<std::pair<int, int>, int> dist_map;
+	std::call_once(map_initialized, initialize_map, std::ref(dist_map), dt_dist_mat);
 	
 	IntegerVector od_pts_full_id = dt_od_pts_full["id"];
 	IntegerVector od_pts_full_line_id = dt_od_pts_full["id_edge"];
@@ -163,33 +156,23 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
 	std::vector<int> to_points;
 	std::vector<int> distances;
 	
+	std::mutex mtx; // Mutex für diese Funktion
+	
 	// Berechnung der Chunk-Größe
 	std::size_t chunk_size = (od_pts_full_id.size() + num_cores - 1) / num_cores;
-	Rcpp::Rcout << "Chunk size: " << chunk_size << std::endl;
+
 	
 	// Initialisieren des Workers
 	NetworkProcessor worker(od_pts_full_id, od_pts_full_line_id, od_pts_full_start, od_pts_full_end,
-                         network_map, from_points, to_points, distances);
+                         network_map, dist_map, from_points, to_points, distances, mtx);
 	
 	// Parallele Verarbeitung der Blöcke
-	Rcpp::Rcout << "Done initialising worker\n";
 	parallelFor(0, od_pts_full_id.size(), worker, chunk_size);
-	
-	// Überprüfen der Längen der Vektoren
-	Rcpp::Rcout << "from_points.size(): " << from_points.size() << std::endl;
-	Rcpp::Rcout << "to_points.size(): " << to_points.size() << std::endl;
-	Rcpp::Rcout << "distances.size(): " << distances.size() << std::endl;
-	
-	// Überprüfen, ob die Vektoren die gleiche Länge haben
-	if (from_points.size() != to_points.size() || from_points.size() != distances.size()) {
-		Rcpp::stop("Die Längen der Vektoren sind unterschiedlich.");
-	}
 	
 	return DataFrame::create(Named("from") = from_points,
                           Named("to") = to_points,
                           Named("distance") = distances);
 }
-
 
 
 

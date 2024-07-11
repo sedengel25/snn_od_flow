@@ -2,8 +2,6 @@ Rcpp::sourceCpp("./src/helper_functions.cpp")
 source("./src/config.R")
 source("./main_functions.R")
 
-
-
 ################################################################################
 # 1. Network data
 ################################################################################
@@ -13,6 +11,7 @@ dt_network <- st_read(con, paste0(char_city,
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 char_dt_dist_mat <-  char_av_dt_dist_mat_files[2]
+print(char_dt_dist_mat)
 char_buffer <- strsplit(char_dt_dist_mat, "_")[[1]][2]
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -21,44 +20,10 @@ dt_dist_mat <- read_rds(here::here(
 dt_dist_mat <- dt_dist_mat %>%
 	mutate(m = round(m, 0) %>% as.integer())
 
-
-# # Erzeuge eine Shared BigMatrix im RAM
-# bigmat <- big.matrix(
-# 	nrow = nrow(dt_dist_mat),
-# 	ncol = ncol(dt_dist_mat),
-# 	type = "integer",
-# 	shared = TRUE,
-# 	dimnames = list(NULL, colnames(dt_dist_mat))
-# )
-# 
-# # Fülle die BigMatrix mit den Werten aus der Datentabelle
-# bigmat[,] <- as.matrix(dt_dist_mat)
-# 
-# # Entferne die ursprüngliche Datentabelle, um RAM freizugeben
-# rm(dt_dist_mat)
-
-# 
-# # Speichern des Deskriptor-Dateipfads für späteren Zugriff
-# descFile <- "dist_mat.desc"
-# desc <- describe(bigmat)
-# dput(desc, file = descFile)
-# 
-# # Lade die BigMatrix erneut für gemeinsamen Speicherzugriff
-# bigmat_shared <- attach.big.matrix(desc)
-# rm(bigmat)
-# gc()
-
-# Initialisiere die std::map einmal
-# Hinweis: Hier wird die Karte nur einmal geladen
-# initialize_map_once(bigmat_shared@address)
-# save_dist_map("dist_map.bin")
-
-
-	
 char_path_trips <- here::here("data", "experiment")
 char_trip_files <- list.files(char_path_trips)
-trip_file <- char_trip_files[1]
-
+trip_file <- char_trip_files[39]
+sf_trips_labelled <- read_rds(here::here(char_path_trips, trip_file)) 
 
 char_path_cpp_maps<- here::here("data", "input", "cpp_map_dist_mat")
 char_map_file <- here::here(char_path_cpp_maps,
@@ -68,54 +33,27 @@ char_map_file <- here::here(char_path_cpp_maps,
 																	 ".bin"))
 
 ################################################################################
-# 2. Trip data 
-################################################################################
-sf_trips_labelled <- read_rds(here::here(char_path_trips, trip_file)) 
-
-sf_trips_labelled$origin_geom <- lwgeom::st_startpoint(sf_trips_labelled$geometry)
-sf_trips_labelled$dest_geom <- lwgeom::st_endpoint(sf_trips_labelled$geometry)
-
-
-dt_origin <- sf_trips_labelled %>%
-	st_set_geometry("origin_geom") %>%
-	select(flow_id, origin_id, origin_geom) %>%
-	rename("id" = "flow_id",
-				 "id_edge" = "origin_id",
-				 "geom" = "origin_geom") %>%
-	as.data.table()
-
-dt_origin <- add_dist_start_end(dt_origin)
-
-dt_dest <- sf_trips_labelled %>%
-	st_set_geometry("dest_geom") %>%
-	select(flow_id, dest_id, dest_geom) %>%
-	rename("id" = "flow_id",
-				 "id_edge" = "dest_id",
-				 "geom" = "dest_geom") %>% 
-	as.data.table
-
-dt_dest <- add_dist_start_end(dt_dest)
-
-
-
-dt_network <- dt_network %>%
-	select(source, target, id, geom_way)
-
-################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
-cores <- 14
-RcppParallel::setThreadOptions(numThreads = cores)
-matrix_flow_nd_dist <- parallel_process_networks(dt_origin, 
+tnd1 <- proc.time()
+matrix_flow_nd_dist <- main_calc_flow_nd_dist_mat(sf_trips_labelled, 
 																								 dt_network,
-																								 dt_dist_mat,
-																								 cores)
+																								 dt_dist_mat)
 
-stop("RcppParallel succesfull")
+tnd2 <- proc.time()
+time_nd <- tnd2-tnd1
+cat("Calculation of network distances took ", time_nd[[3]], " seconds.")
+rm(dt_dist_mat)
+gc()
+
+
+teuclid1 <- proc.time()
 matrix_flow_euclid_dist <- main_calc_flow_euclid_dist_mat(sf_trips_labelled)
 matrix_flow_euclid_dist_geom <- calc_geom_dist_mat(sf_trips_labelled, 
 																										matrix_flow_euclid_dist)
-
+teuclid2 <- proc.time()
+time_euclid <- teuclid2-teuclid1
+cat("Calculation of euclidean distances took ", time_euclid[[3]], " seconds.")
 ################################################################################
 # 4. Find a good value for k based on the RKD plot
 ################################################################################
