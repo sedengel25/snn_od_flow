@@ -206,19 +206,19 @@ calc_flow_nd_dist_mat <- function(dt_flow_nd) {
 	int_max_value <- max(dt_flow_nd$flow_m, dt_flow_nd$flow_n)
 	
 	int_big_m <- 9e10
-	
+	print("step_1")
 	# Initiate a matrix with BIG M values
 	matrix_flow_nd <- matrix(int_big_m, nrow = int_max_value, ncol = int_max_value)
-	
+	print("step_2")
 	# Fill the matrix at the cells for which with real distances exist  
 	matrix_flow_nd[cbind(dt_flow_nd$flow_m, dt_flow_nd$flow_n)] <- dt_flow_nd$distance
-	
+	print("step_3")
 	# Create a matrix with TRUEs where real distances exist
 	matrix_flow_nd_boolean <- matrix_flow_nd < int_big_m
-	
+	print("step_4")
 	# Fills matrix with NAs where no rael distances exist
 	matrix_flow_nd_true <- ifelse(matrix_flow_nd_boolean, matrix_flow_nd,  NA)
-	
+	print("step_5")
 	return(matrix_flow_nd_true)
 }
 

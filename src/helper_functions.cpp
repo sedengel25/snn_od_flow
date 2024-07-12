@@ -3,6 +3,7 @@
 #include <RcppParallel.h>
 #include <map>
 #include <mutex>
+#include <chrono>
 
 using namespace Rcpp;
 using namespace RcppParallel;
@@ -141,9 +142,17 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
                                     DataFrame dt_network,
                                     DataFrame dt_dist_mat,
                                     int num_cores) {
+	auto start = std::chrono::system_clock::now();
+	std::time_t start_time = std::chrono::system_clock::to_time_t(start);
 	
 	static std::map<std::pair<int, int>, int> dist_map;
 	std::call_once(map_initialized, initialize_map, std::ref(dist_map), dt_dist_mat);
+	
+	auto end = std::chrono::system_clock::now();
+	std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+	std::chrono::duration<double> elapsed_seconds = end - start;
+	Rcpp::Rcout << "Time needed for converting dt_dist_mat into cpp map: " << elapsed_seconds.count() << " seconds." << std::endl;
+	
 	
 	IntegerVector od_pts_full_id = dt_od_pts_full["id"];
 	IntegerVector od_pts_full_line_id = dt_od_pts_full["id_edge"];
@@ -167,7 +176,15 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
                          network_map, dist_map, from_points, to_points, distances, mtx);
 	
 	// Parallele Verarbeitung der Blöcke
+	auto start2 = std::chrono::system_clock::now();
+	std::time_t start_time2 = std::chrono::system_clock::to_time_t(start);
+	
 	parallelFor(0, od_pts_full_id.size(), worker, chunk_size);
+	
+	auto end2 = std::chrono::system_clock::now();
+	std::time_t end_time2 = std::chrono::system_clock::to_time_t(end);
+	std::chrono::duration<double> elapsed_seconds2 = end2 - start2;
+	Rcpp::Rcout << "Time needed for calculating network distances: " << elapsed_seconds2.count() << " seconds." << std::endl;
 	
 	return DataFrame::create(Named("from") = from_points,
                           Named("to") = to_points,

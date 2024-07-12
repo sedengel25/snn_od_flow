@@ -426,13 +426,13 @@ for (n_clusters in n_clusters_vals) {
 for(i in 1:nrow(param_grid)){
 	n_clusters <- param_grid[i, "n_clusters"]
 	n_noiseflows <- param_grid[i, "n_noiseflows"]
-	sf_clusters <- create_synth_dataset(n_clusters = n_clusters, 
-																			n_noiseflows = n_noiseflows)
+	sf_clusters <- create_synth_dataset(n_clusters = 100, 
+																			n_noiseflows = 50000)
 	
 	write_rds(sf_clusters, paste0("./data/experiment/",
-																n_clusters,
+																100,
 																"_",
-																n_noiseflows,
+																50000,
 																".rds"))
 }
 

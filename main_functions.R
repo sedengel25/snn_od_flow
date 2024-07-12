@@ -50,7 +50,7 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 																					dt_dist_mat,
 																					int_cores)
 	
-	print("ND between origin points calculated")
+	#print("ND between origin points calculated")
 	# ND between dest points
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,
@@ -58,25 +58,30 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 																					 int_cores)
 	
 	
-	print("ND between dest points calculated")
+	#print("ND between dest points calculated")
 	# ND between OD flows
 	dt_flow_nd <- dt_o_pts_nd %>%
 		inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
 		mutate(distance = distance.x + distance.y) %>%
 		select(flow_m = from, flow_n = to, distance) %>%
 		as.data.table
-	
+	print("join1 successful")
 	dt_flow_nd <- dt_flow_nd %>%
 		group_by(flow_m) %>%
 		mutate(row_id = row_number()) %>%
 		ungroup() %>%
 		as.data.table
-	
+	print("join2 successful")
 	### 3. Calc OD-flow ND matrix ------------------------------------------------
 	matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
-	print("ND-matrix of flows created")
+	print("matrix conversion successful")
+	sym_mat <- matrix_flow_dist
+	sym_mat[is.na(sym_mat)] <- 0  
+	sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
+	sym_mat[sym_mat == 0] <- NA
+	print("symmat successful")
 	
-	return(matrix_flow_dist)
+	return(sym_mat)
 }
 
 

@@ -10,7 +10,7 @@ dt_network <- st_read(con, paste0(char_city,
 																	"_2po_4pgr")) %>% as.data.table
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[2]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[4]
 print(char_dt_dist_mat)
 char_buffer <- strsplit(char_dt_dist_mat, "_")[[1]][2]
 dt_dist_mat <- read_rds(here::here(
@@ -22,7 +22,7 @@ dt_dist_mat <- dt_dist_mat %>%
 
 char_path_trips <- here::here("data", "experiment")
 char_trip_files <- list.files(char_path_trips)
-trip_file <- char_trip_files[39]
+trip_file <- char_trip_files[18]
 sf_trips_labelled <- read_rds(here::here(char_path_trips, trip_file)) 
 
 char_path_cpp_maps<- here::here("data", "input", "cpp_map_dist_mat")
@@ -40,10 +40,11 @@ matrix_flow_nd_dist <- main_calc_flow_nd_dist_mat(sf_trips_labelled,
 																								 dt_network,
 																								 dt_dist_mat)
 
+
 tnd2 <- proc.time()
 time_nd <- tnd2-tnd1
 cat("Calculation of network distances took ", time_nd[[3]], " seconds.")
-rm(dt_dist_mat)
+#rm(dt_dist_mat)
 gc()
 
 
@@ -197,7 +198,8 @@ ggplot(data = sf_trips_labelled[sf_trips_labelled$cluster_id!=0,]) +
 	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
 	theme_minimal() +
 	labs(color = "Cluster ID",
-			 title = "Ground truth")
+			 title = paste0("Ground truth for",
+			 							 trip_file))
 
 best_euclid_k <- df_euclid_sorted[1, "k"]
 best_euclid_eps <- df_euclid_sorted[1, "eps"]
@@ -217,7 +219,8 @@ ggplot(data = sf_cluster_euclid_pred[sf_cluster_euclid_pred$cluster_pred!=0,]) +
 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
 	theme_minimal() +
 	labs(color = "Cluster ID",
-			 title = "Euclidean distance")
+			 title = paste0("Euclidean distance cluster result for",
+			 							 " (buffer", char_buffer, "_", trip_file, ")"),)
 
 best_nd_k <- df_nd_sorted[1, "k"]
 best_nd_eps <- df_nd_sorted[1, "eps"]
@@ -232,13 +235,17 @@ sf_cluster_nd_pred <- sf_trips_labelled %>%
 	left_join(dt_snn_pred_nd, by = c("flow_id" = "flow")) %>%
 	select(cluster_pred, geometry)
 
-
+# dir.create()
+# char_path_plots <- here::here()
+	
+	
 ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	geom_sf(data=st_as_sf(dt_network)) +
 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
 	theme_minimal() +
 	labs(color = "Cluster ID",
-			 title = "Network distance")
+			 title = paste0("Network distance cluster result for",
+			 							 " (buffer", char_buffer, "_", trip_file, ")"),)
 
 
 
@@ -247,12 +254,13 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 # 3d plot
 ################################################################################
 # Network distance
-plot_ly(
+plot1 <- plot_ly(
 	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~adj_rand,
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
 ) %>%
-	layout(title = "Adjusted Rand Index for 'nd'",
+	layout(title = paste0("Adjusted Rand Index for 'nd'",
+											 " (buffer", char_buffer, "_", trip_file, ")"),
 				 scene = list(
 				 	xaxis = list(title = "k"),
 				 	yaxis = list(title = "eps"),
@@ -264,7 +272,8 @@ plot_ly(
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
 ) %>%
-	layout(title = "Silhoutte coefficient for 'nd'",
+	layout(title = paste0("Silhoutte coefficient for 'nd'",
+												" (buffer", char_buffer, "_", trip_file, ")"),
 				 scene = list(
 				 	xaxis = list(title = "k"),
 				 	yaxis = list(title = "eps"),
@@ -276,24 +285,29 @@ plot_ly(
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
 ) %>%
-	layout(title = "Geometric Silhoutte coefficient for 'nd'",
+	layout(title = paste0("Geometric Silhoutte coefficient for 'nd'",
+												" (buffer", char_buffer, "_", trip_file, ")"),
 				 scene = list(
 				 	xaxis = list(title = "k"),
 				 	yaxis = list(title = "eps"),
 				 	zaxis = list(title = "minpts")
 				 ))
+
 # Euclidean distance
-plot_ly(
+plot2 <- plot_ly(
 	df_euclid_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~adj_rand,
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
 ) %>%
-	layout(title = "Adjusted Rand Index for 'euclid'",
+	layout(title = paste0("Adjusted Rand Index for 'euclid'",
+												" (buffer", char_buffer, "_", trip_file, ")"),
 				 scene = list(
 				 	xaxis = list(title = "k"),
 				 	yaxis = list(title = "eps"),
 				 	zaxis = list(title = "minpts")
 				 ))
+
+subplot(plot1, plot2, nrows = 1, shareX = FALSE, shareY = FALSE, titleX = TRUE, titleY = TRUE)
 
 
 plot_ly(
@@ -301,7 +315,8 @@ plot_ly(
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
 ) %>%
-	layout(title = "Silhoutte coefficient for 'euclid'",
+	layout(title = paste0("Silhoutte coefficient for 'euclid'",
+												" (buffer", char_buffer, "_", trip_file, ")"),
 				 scene = list(
 				 	xaxis = list(title = "k"),
 				 	yaxis = list(title = "eps"),
@@ -313,7 +328,8 @@ plot_ly(
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
 ) %>%
-	layout(title = "Geometric Silhoutte coefficient for 'euclid'",
+	layout(title = paste0("Geometric Silhoutte coefficient for 'euclid'",
+												" (buffer", char_buffer, "_", trip_file, ")"),
 				 scene = list(
 				 	xaxis = list(title = "k"),
 				 	yaxis = list(title = "eps"),
