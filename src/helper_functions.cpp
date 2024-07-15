@@ -194,6 +194,70 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
 
 
 // [[Rcpp::export]]
+Rcpp::DataFrame cpp_find_knn(Rcpp::DataFrame df, int k, IntegerVector flow_ids) {
+	Rcpp::IntegerVector all_flows = df["flow_m"];
+	Rcpp::IntegerVector flow_m = df["flow_m"];
+	Rcpp::IntegerVector flow_n = df["flow_n"];
+	Rcpp::IntegerVector distance = df["distance"];
+	
+	// Create a map to hold the nearest neighbors for each flow_m
+	std::map<int, std::vector<std::pair<int, int>>> nn_map;
+	
+	// Populate the map with distances and neighbors
+	for (int i = 0; i < flow_m.size(); ++i) {
+		int m = flow_m[i];
+		int n = flow_n[i];
+		int dist = distance[i];
+		nn_map[m].push_back(std::make_pair(dist, n));
+	}
+	
+	// Create a set to hold unique flow_m values
+	std::set<int> unique_flow_m_set(flow_ids.begin(), flow_ids.end());
+	std::vector<int> unique_flow_m(unique_flow_m_set.begin(), unique_flow_m_set.end());
+	
+	// Create vectors for the results
+	std::vector<int> result_flow_m;
+	std::vector<std::vector<int>> result_nns(unique_flow_m.size(), std::vector<int>(k, NA_INTEGER));
+	
+	// Find the k nearest neighbors for each flow_m
+	for (size_t i = 0; i < unique_flow_m.size(); ++i) {
+		int m = unique_flow_m[i];
+		result_flow_m.push_back(m);
+		
+		// Sort the neighbors by distance
+		std::sort(nn_map[m].begin(), nn_map[m].end());
+		
+		// Fill the result vectors with the k nearest neighbors
+		for (int j = 0; j < std::min(k, (int)nn_map[m].size()); ++j) {
+			result_nns[i][j] = nn_map[m][j].second;
+		}
+	}
+	
+	// Add missing flow_m values with NA for nearest neighbors
+	for (int m : unique_flow_m) {
+		if (nn_map.find(m) == nn_map.end()) {
+			result_flow_m.push_back(m);
+			result_nns.push_back(std::vector<int>(k, NA_INTEGER));
+		}
+	}
+	
+	// Create the result DataFrame
+	Rcpp::List result;
+	result["flow_ref"] = result_flow_m;
+	for (int j = 0; j < k; ++j) {
+		std::string col_name = "NN" + std::to_string(j + 1);
+		Rcpp::IntegerVector col(result_flow_m.size());
+		for (size_t i = 0; i < result_flow_m.size(); ++i) {
+			col[i] = result_nns[i][j];
+		}
+		result[col_name] = col;
+	}
+	
+	return Rcpp::DataFrame(result);
+}
+
+
+// [[Rcpp::export]]
 List cpp_calc_density_n_get_dr_df(IntegerMatrix dt_knn, int eps, int int_k) {
 	// Initiate variables
 	int n = dt_knn.nrow();

@@ -65,23 +65,23 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 		mutate(distance = distance.x + distance.y) %>%
 		select(flow_m = from, flow_n = to, distance) %>%
 		as.data.table
-	print("join1 successful")
+	
 	dt_flow_nd <- dt_flow_nd %>%
 		group_by(flow_m) %>%
 		mutate(row_id = row_number()) %>%
 		ungroup() %>%
 		as.data.table
-	print("join2 successful")
+	return(dt_flow_nd)
 	### 3. Calc OD-flow ND matrix ------------------------------------------------
-	matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
-	print("matrix conversion successful")
-	sym_mat <- matrix_flow_dist
-	sym_mat[is.na(sym_mat)] <- 0  
-	sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
-	sym_mat[sym_mat == 0] <- NA
-	print("symmat successful")
-	
-	return(sym_mat)
+	# matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
+	# print("matrix conversion successful")
+	# sym_mat <- matrix_flow_dist
+	# sym_mat[is.na(sym_mat)] <- 0
+	# sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
+	# sym_mat[sym_mat == 0] <- NA
+	# print("symmat successful")
+	# 
+	# return(sym_mat)
 }
 
 
@@ -110,54 +110,98 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips) {
 # Returns: datatable
 # Output: ...
 # Action: ...
-snn_flow <- function(flow_dist_mat, k, eps, minpts) {
+snn_flow <- function(dt_flow_nd, sf_trips, k, eps, minpts) {
 
 	### 1. Calculate SNN Density -------------------------------------------------
 
-	matrix_knn_dist <- t(apply(flow_dist_mat, 1, r1_get_knn_dist, k))
-	matrix_knn_ind <- t(apply(flow_dist_mat, 1, r1_get_knn_ind, k))
+	# matrix_knn_dist <- t(apply(dt_flow_nd, 1, r1_get_knn_dist, k))
+	# matrix_knn_ind <- t(apply(dt_flow_nd, 1, r1_get_knn_ind, k))
+	# 
+	# print("matrix_knn_ind: ")
+	# print(matrix_knn_ind)
+	# # Get a boolean matrix (TRUE = distance matrix contains value)...
+	# num_flows <- nrow(matrix_knn_ind)
+	# max_index <- max(matrix_knn_ind)
+	# boolean_knn <- !is.na(matrix_knn_dist)
+	# 
+	# # ...to get NAs also in the knn-matrix containing the indices
+	# matrix_knn_ind <- ifelse(boolean_knn, matrix_knn_ind,  NA)
+	# 
+	# 
+	# 
+	# 
+	# 
+	# dt_knn <- as.data.table(matrix_knn_ind)
+	# dt_knn$flow_ref <- 1:nrow(matrix_knn_ind)
+	# print("dt_knn: ")
+	# print(dt_knn)
+	# matrix_knn <- dt_knn %>%
+	# 	select(flow_ref, everything()) %>%
+	# 	as.matrix
+	p1 <- proc.time()
+	all_flow_ids <- unique(sf_trips$flow_id)
 	
-	
-	
-	# Get a boolean matrix (TRUE = distance matrix contains value)...
-	num_flows <- nrow(matrix_knn_ind)
-	max_index <- max(matrix_knn_ind)  
-	boolean_knn <- !is.na(matrix_knn_dist)
-	
-	# ...to get NAs also in the knn-matrix containing the indices
-	matrix_knn_ind <- ifelse(boolean_knn, matrix_knn_ind,  NA)
-	
-	
-	
-	
-	
-	dt_knn <- as.data.table(matrix_knn_ind)
-	dt_knn$flow_ref <- 1:nrow(matrix_knn_ind)
-	
-	matrix_knn <- dt_knn %>%
-		select(flow_ref, everything()) %>%
+	matrix_knn <- cpp_find_knn(df = dt_flow_nd, k = k, all_flow_ids) %>%
 		as.matrix
+
 	
+# 	p1 <- proc.time()
+# 	nns <- dt_flow_nd[, head(.SD[order(distance)], k), by = flow_m]
+# 	p2 <- proc.time()
+# 	time_diff <- p2-p1
+# 	cat("nns: ", time_diff[[3]], " seconds.\n")
+# 	
+# 	p1 <- proc.time()
+# 	
+#   dt_knn <- nns[, {
+# 		nn <- .SD[1:k, flow_n]
+# 		c(list(flow_m = .BY[[1]]), as.list(nn))
+# 	}, by = flow_m]
+# 	dt_knn <- dt_knn[,-1]
+# 	setnames(dt_knn, c("flow_m", paste0("NN", 1:k)))
+# 	all_flow_m <- unique(sf_trips$flow_id)
+# 	missing_flow_m <- setdiff(all_flow_m, dt_knn$flow_m)
+# 	missing_entries <- data.table(flow_m = missing_flow_m)
+# 	missing_entries[, (paste0("NN", 1:k)) := NA]
+# 	dt_knn <- rbindlist(list(dt_knn, missing_entries), fill = TRUE)
+# 	setnames(dt_knn, "flow_m", "flow_ref")
+# 	setorder(dt_knn, flow_ref)
+# 	matrix_knn <- dt_knn %>%
+# 		as.matrix
+# 	
+# 	print(matrix_knn[1184,])
+# 	diff_matrix <- matrix_knn_test - matrix_knn
+# 	return(diff_matrix)
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("matrix_knn: ", time_diff[[3]], " seconds.\n")
 	
+	p1 <- proc.time()
 	list_df <- cpp_calc_density_n_get_dr_df(dt_knn = matrix_knn,
 																					eps = eps,
 																					int_k = k)
-	
 	dt_snn_density <- list_df$snn_density %>% as.data.table()
 	
-	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("dt_snn_density: ", time_diff[[3]], " seconds.\n")
 	
 
 	### 2. Assign clusters using density connectivity mechanism ------------------
+	p1 <- proc.time()
+	
 	dt_dr_flows <- list_df$dr_flows %>% as.data.table
-	
-	
+
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("dt_dr_flows: ", time_diff[[3]], " seconds.\n")
 	
 	# Flows with a SNNDensity higher than the threshold are 'core-flows'
 	dt_snn_density <- dt_snn_density %>%
 		mutate(core_flow = case_when(shared_density >= minpts ~ "yes",
 																 TRUE ~ "no"))
 	
+	setorder(dt_snn_density, flow)
 
 	# If no core-flows are found, all flows are noise
 	if(length(which(dt_snn_density$core_flow == "yes")) == 0){
@@ -167,12 +211,20 @@ snn_flow <- function(flow_dist_mat, k, eps, minpts) {
 		return(dt_cluster_final)
 	}
 	
+	p1 <- proc.time()
+	
 	# Get all core flows
 	total_core_flows <- dt_snn_density %>%
 		filter(core_flow == "yes") %>%
 		select(flow) %>%
 		pull %>%
 		as.integer
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("total_core_flows: ", time_diff[[3]], " seconds.\n")
+	
+	p1 <- proc.time()
 	
 	# Get all flows directly reachable from the core flows
 	flows_reachable_from_core_flow <- dt_dr_flows %>%
@@ -183,11 +235,22 @@ snn_flow <- function(flow_dist_mat, k, eps, minpts) {
 		as.integer %>%
 		unique
 	
-	# Create a table with all directly reachable core-flow pairs...
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("flows_reachable_from_core_flow: ", time_diff[[3]], " seconds.\n")
+
+	p1 <- proc.time()
+	
+		# Create a table with all directly reachable core-flow pairs...
 	dt_dr_flows_cf <- dt_dr_flows[from %in% total_core_flows & 
 																	to %in% total_core_flows]
 	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("dt_dr_flows_cf: ", time_diff[[3]], " seconds.\n")
 	
+	p1 <- proc.time()
 	# ...create a graph from that dataframe... 
 	graph <- graph_from_data_frame(dt_dr_flows_cf, directed = FALSE)
 	
@@ -210,7 +273,11 @@ snn_flow <- function(flow_dist_mat, k, eps, minpts) {
 	dt_cluster <- rbind(dt_cluster_coreflows, dt_cluster_0) %>%
 		arrange(flow)
 	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("Get coreflows: ", time_diff[[3]], " seconds.\n")
 	
+	p1 <- proc.time()
 	# Now assign all the non-core flows
 	list_cluster_final <- cpp_assign_clusters(dt_cluster = dt_cluster,
 																						dt_knn_r = matrix_knn,
@@ -244,5 +311,15 @@ snn_flow <- function(flow_dist_mat, k, eps, minpts) {
 	dt_cluster_final <- dt_cluster_final %>%
 		arrange(flow)
 	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("Assign non-core flows: ", time_diff[[3]], " seconds.\n")
 	return(dt_cluster_final)
 }
+
+
+
+
+
+
+

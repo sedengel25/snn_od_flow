@@ -216,7 +216,7 @@ calc_flow_nd_dist_mat <- function(dt_flow_nd) {
 	# Create a matrix with TRUEs where real distances exist
 	matrix_flow_nd_boolean <- matrix_flow_nd < int_big_m
 	print("step_4")
-	# Fills matrix with NAs where no rael distances exist
+	# Fills matrix with NAs where no real distances exist
 	matrix_flow_nd_true <- ifelse(matrix_flow_nd_boolean, matrix_flow_nd,  NA)
 	print("step_5")
 	return(matrix_flow_nd_true)
