@@ -102,10 +102,10 @@ df_cluster_valid <- data.frame(
 	purity = numeric(),
 	entropy = numeric(),
 	nmi = numeric(),
-	nvi = numeric(),
-	sil = numeric(),
-	geom_sil = numeric(),
-	cdbw = numeric()
+	nvi = numeric()
+	# sil = numeric(),
+	# geom_sil = numeric(),
+	# cdbw = numeric()
 )
 
 for(i in 1:nrow(param_grid)){
@@ -143,26 +143,25 @@ for(i in 1:nrow(param_grid)){
 															 k = int_k,
 															 eps = int_eps,
 															 minpts = int_minpts)
-		print(head(dt_snn_pred_nd))
 		sf_snn_nd <- dt_snn_pred_nd %>%
 			left_join(sf_trips_labelled %>% select(flow_id, geometry), 
 								by = c("flow" = "flow_id")) %>%
 			st_as_sf()
-		print(head(sf_snn_nd))
+
 		cluster_valid_nd <- lapply(char_methods, function(x){
 			idx_nd <- ClusterR::external_validation(sf_trips_labelled$cluster_id,
 																							dt_snn_pred_nd$cluster_pred,
 																							method = x)
 			
 		})
-		print(head(cluster_valid_nd))
 		df_cluster_valid[i, "dist_measure"] <- "nd" 
 		df_cluster_valid[i, "k"] <- int_k
 		df_cluster_valid[i, "eps"] <- int_eps
 		df_cluster_valid[i, "minpts"] <- int_minpts
 		df_cluster_valid[i, 5:13] <- sapply(cluster_valid_nd, `[`, 1)
-		df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_snn_nd)$sil
-		df_cluster_valid[i, "geom_sil"] <- calc_sil_score(sf_trips = sf_snn_nd)$geom_sil
+		### Calculation of silhoutte-score causes session abort due to big matrices
+		# df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_snn_nd)$sil
+		# df_cluster_valid[i, "geom_sil"] <- calc_sil_score(sf_trips = sf_snn_nd)$geom_sil
 	}
 }
 write_rds(df_cluster_valid, here::here("data",
@@ -232,7 +231,8 @@ best_nd_k <- df_nd_sorted[1, "k"]
 best_nd_eps <- df_nd_sorted[1, "eps"]
 best_nd_minpts <- df_nd_sorted[1, "minpts"]
 
-dt_snn_pred_nd <- snn_flow(flow_dist_mat = matrix_flow_nd_dist,
+dt_snn_pred_nd <- snn_flow(dt_flow_nd = dt_sym,
+													 sf_trips = sf_trips_labelled,
 															 k = best_nd_k,
 															 eps = best_nd_eps,
 															 minpts = best_nd_minpts)
@@ -260,7 +260,7 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 # 3d plot
 ################################################################################
 # Network distance
-plot1 <- plot_ly(
+plot_ly(
 	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~adj_rand,
 	type = 'scatter3d', mode = 'markers',
 	marker = list(size = 5)
@@ -273,31 +273,31 @@ plot1 <- plot_ly(
 				 	zaxis = list(title = "minpts")
 				 ))
 
-plot_ly(
-	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~sil,
-	type = 'scatter3d', mode = 'markers',
-	marker = list(size = 5)
-) %>%
-	layout(title = paste0("Silhoutte coefficient for 'nd'",
-												" (buffer", char_buffer, "_", trip_file, ")"),
-				 scene = list(
-				 	xaxis = list(title = "k"),
-				 	yaxis = list(title = "eps"),
-				 	zaxis = list(title = "minpts")
-				 ))
-
-plot_ly(
-	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~geom_sil,
-	type = 'scatter3d', mode = 'markers',
-	marker = list(size = 5)
-) %>%
-	layout(title = paste0("Geometric Silhoutte coefficient for 'nd'",
-												" (buffer", char_buffer, "_", trip_file, ")"),
-				 scene = list(
-				 	xaxis = list(title = "k"),
-				 	yaxis = list(title = "eps"),
-				 	zaxis = list(title = "minpts")
-				 ))
+# plot_ly(
+# 	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~sil,
+# 	type = 'scatter3d', mode = 'markers',
+# 	marker = list(size = 5)
+# ) %>%
+# 	layout(title = paste0("Silhoutte coefficient for 'nd'",
+# 												" (buffer", char_buffer, "_", trip_file, ")"),
+# 				 scene = list(
+# 				 	xaxis = list(title = "k"),
+# 				 	yaxis = list(title = "eps"),
+# 				 	zaxis = list(title = "minpts")
+# 				 ))
+# 
+# plot_ly(
+# 	df_nd_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~geom_sil,
+# 	type = 'scatter3d', mode = 'markers',
+# 	marker = list(size = 5)
+# ) %>%
+# 	layout(title = paste0("Geometric Silhoutte coefficient for 'nd'",
+# 												" (buffer", char_buffer, "_", trip_file, ")"),
+# 				 scene = list(
+# 				 	xaxis = list(title = "k"),
+# 				 	yaxis = list(title = "eps"),
+# 				 	zaxis = list(title = "minpts")
+# 				 ))
 
 # Euclidean distance
 # plot2 <- plot_ly(
