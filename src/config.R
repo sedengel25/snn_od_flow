@@ -30,6 +30,8 @@ library(plotly)
 library(clValid)
 library(cluster)
 library(fpc)
+library(RANN)
+library(Rfast2)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

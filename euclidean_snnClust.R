@@ -23,15 +23,17 @@ sf_org <- read_rds(here::here(path_files, char_files[1]))
 ################################################################################
 # 1. Get distances between all OD-points
 ################################################################################
-main_calc_flow_euclid_dist_mat <- function(sf_org, lwgeom, st_startpoint, st_endpoint) {
-  sf_org$origin <- lwgeom::st_startpoint(sf_org$geometry)
-  sf_org$dest <- lwgeom::st_endpoint(sf_org$geometry)
-  sf_origin_distances <- st_distance(sf_org$origin, by_element = FALSE)
-  sf_dest_distances <- st_distance(sf_org$dest, by_element = FALSE)
-  matrix_distances <- drop_units(sf_origin_distances + sf_dest_distances)
-  matrix_geom_dist <- calc_geom_dist_mat(sf_org)
-  matrix_distances <- matrix_geom_dist
-}
+# main_calc_flow_euclid_dist_mat <- function(sf_org) {
+#   sf_org$origin <- lwgeom::st_startpoint(sf_org$geometry)
+#   sf_org$dest <- lwgeom::st_endpoint(sf_org$geometry)
+#   sf_origin_distances <- st_distance(sf_org$origin, by_element = FALSE)
+#   sf_dest_distances <- st_distance(sf_org$dest, by_element = FALSE)
+#   matrix_distances <- drop_units(sf_origin_distances + sf_dest_distances)
+#   matrix_geom_dist <- calc_geom_dist_mat(sf_org)
+#   matrix_distances <- matrix_geom_dist
+# }
+
+
 
 
 ################################################################################

@@ -52,7 +52,15 @@ tnd2 <- proc.time()
 time_nd <- tnd2-tnd1
 
 # teuclid1 <- proc.time()
-# matrix_flow_euclid_dist <- main_calc_flow_euclid_dist_mat(sf_trips_labelled)
+dt_flow_euclid <- main_calc_flow_euclid_dist_mat(sf_trips_labelled)
+
+
+
+
+
+
+
+
 # matrix_flow_euclid_dist_geom <- calc_geom_dist_mat(sf_trips_labelled, 
 # 																										matrix_flow_euclid_dist)
 # teuclid2 <- proc.time()
@@ -110,6 +118,7 @@ df_cluster_valid <- data.frame(
 
 for(i in 1:nrow(param_grid)){
 	print(i)
+	i = 1
 	int_k <- param_grid[i, "k"]
 	int_eps <-  param_grid[i, "eps"]
 	int_minpts <- param_grid[i, "minpts"]
@@ -166,8 +175,10 @@ for(i in 1:nrow(param_grid)){
 }
 write_rds(df_cluster_valid, here::here("data",
 																			 "cluster_validation_results",
-																			 paste0("cluster_val_ext_int_cdbw", trip_file)))
-
+																			 paste0("cluster_val_ext", trip_file)))
+df_cluster_valid <- read_rds(here::here("data",
+										"cluster_validation_results",
+										paste0("cluster_val_ext_int_cdbw", trip_file)))
 head(df_cluster_valid)
 ################################################################################
 # 7. Evaluate the results visually
@@ -206,36 +217,55 @@ ggplot(data = sf_trips_labelled[sf_trips_labelled$cluster_id!=0,]) +
 			 title = paste0("Ground truth for",
 			 							 trip_file))
 
+k <- 10
+eps <- 5
+minpts <- 5
+
 # best_euclid_k <- df_euclid_sorted[1, "k"]
 # best_euclid_eps <- df_euclid_sorted[1, "eps"]
 # best_euclid_minpts <- df_euclid_sorted[1, "minpts"]
-# 
-# dt_snn_pred_euclid <- snn_flow(flow_dist_mat = matrix_flow_euclid_dist,
-# 															 k = best_euclid_k,
-# 															 eps = best_euclid_eps,
-# 															 minpts = best_euclid_minpts)
-# 
-# sf_cluster_euclid_pred <- sf_trips_labelled %>%
-# 	left_join(dt_snn_pred_euclid, by = c("flow_id" = "flow")) %>%
-# 	select(cluster_pred, geometry)
-# 
-# ggplot(data = sf_cluster_euclid_pred[sf_cluster_euclid_pred$cluster_pred!=0,]) +
-# 	geom_sf(data=st_as_sf(dt_network)) +
-# 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
-# 	theme_minimal() +
-# 	labs(color = "Cluster ID",
-# 			 title = paste0("Euclidean distance cluster result for",
-# 			 							 " (buffer", char_buffer, "_", trip_file, ")"),)
 
-best_nd_k <- df_nd_sorted[1, "k"]
-best_nd_eps <- df_nd_sorted[1, "eps"]
-best_nd_minpts <- df_nd_sorted[1, "minpts"]
 
-dt_snn_pred_nd <- snn_flow(dt_flow_nd = dt_sym,
-													 sf_trips = sf_trips_labelled,
-															 k = best_nd_k,
-															 eps = best_nd_eps,
-															 minpts = best_nd_minpts)
+best_euclid_k <- k
+best_euclid_eps <- eps
+best_euclid_minpts <- minpts
+
+dt_snn_pred_euclid <- snn_flow(sf_trips = sf_trips_labelled,
+																					k = best_euclid_k,
+																					eps = best_euclid_eps,
+																					minpts = best_euclid_minpts,
+																					dt_flow_distance = dt_flow_euclid)
+
+
+
+
+sf_cluster_euclid_pred <- sf_trips_labelled %>%
+	left_join(dt_snn_pred_euclid, by = c("flow_id" = "flow")) %>%
+	select(cluster_pred, geometry)
+
+ggplot(data = sf_cluster_euclid_pred[sf_cluster_euclid_pred$cluster_pred!=0,]) +
+	geom_sf(data=st_as_sf(dt_network)) +
+	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
+	theme_minimal() +
+	labs(color = "Cluster ID",
+			 title = paste0("Euclidean distance cluster result for",
+			 							 " (buffer", char_buffer, "_", trip_file, ")"),)
+
+# best_nd_k <- df_nd_sorted[1, "k"]
+# best_nd_eps <- df_nd_sorted[1, "eps"]
+# best_nd_minpts <- df_nd_sorted[1, "minpts"]
+
+best_nd_k <- k
+best_nd_eps <- eps
+best_nd_minpts <- minpts
+
+
+dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips_labelled,
+													 k = best_euclid_k,
+													 eps = best_euclid_eps,
+													 minpts = best_euclid_minpts,
+													 dt_flow_distance = dt_flow_nd)
+
 
 sf_cluster_nd_pred <- sf_trips_labelled %>%
 	left_join(dt_snn_pred_nd, by = c("flow_id" = "flow")) %>%

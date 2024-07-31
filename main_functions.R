@@ -93,13 +93,39 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 # Returns: matrix
 # Output: ...
 # Action: ...
+# main_calc_flow_euclid_dist_mat <- function(sf_org) {
+# 	sf_org$origin <- lwgeom::st_startpoint(sf_org$geometry)
+# 	sf_org$dest <- lwgeom::st_endpoint(sf_org$geometry)
+# 	sf_origin_distances <- st_distance(sf_org$origin, by_element = FALSE)
+# 	sf_dest_distances <- st_distance(sf_org$dest, by_element = FALSE)
+# 	matrix_distances <- drop_units(sf_origin_distances + sf_dest_distances)
+# 	matrix_geom_dist <- calc_geom_dist_mat(sf_org)
+# 	matrix_distances <- matrix_geom_dist
+# }
+
+
 main_calc_flow_euclid_dist_mat <- function(sf_trips) {
-	sf_trips$origin <- lwgeom::st_startpoint(sf_trips$geometry)
-	sf_trips$dest <- lwgeom::st_endpoint(sf_trips$geometry)
-	sf_origin_distances <- st_distance(sf_trips$origin, by_element = FALSE)
-	sf_dest_distances <- st_distance(sf_trips$dest, by_element = FALSE)
-	matrix_distances <- drop_units(sf_origin_distances + sf_dest_distances)
-	return(matrix_distances)
+	sf_centroids <- st_centroid(sf_trips$geometry)
+	within_radius_pairs <- st_is_within_distance(sf_centroids,
+																							 dist = 1000)
+	# Extrahiere die Indizes der Paare
+	pairs_list <- lapply(seq_along(within_radius_pairs), function(i) {
+		data.table(flow_m = i, flow_n = unlist(within_radius_pairs[[i]]))
+	})
+	# Kombiniere alle Paare in einem einzigen Dataframe
+	dt_flow_euclid <- rbindlist(pairs_list)
+	dt_flow_euclid <- dt_flow_euclid[flow_m != flow_n]
+	dt_flow_euclid <- dt_flow_euclid[, .(flow_m = pmin(flow_m, flow_n), 
+													 flow_n = pmax(flow_m, flow_n))]
+	
+	dt_flow_euclid <- unique(dt_flow_euclid)
+	
+	geom_m <- sf_trips$geometry[dt_flow_euclid$flow_m]
+	geom_n <- sf_trips$geometry[dt_flow_euclid$flow_n]
+	distances <- st_distance(geom_m, geom_n, by_element = TRUE)
+	dt_flow_euclid[, distance := as.integer(round(distances))]
+	
+	return(dt_flow_euclid)
 }
 
 
@@ -110,76 +136,17 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips) {
 # Returns: datatable
 # Output: ...
 # Action: ...
-snn_flow <- function(dt_flow_nd, sf_trips, k, eps, minpts) {
-
-	### 1. Calculate SNN Density -------------------------------------------------
-
-	# matrix_knn_dist <- t(apply(dt_flow_nd, 1, r1_get_knn_dist, k))
-	# matrix_knn_ind <- t(apply(dt_flow_nd, 1, r1_get_knn_ind, k))
-	# 
-	# print("matrix_knn_ind: ")
-	# print(matrix_knn_ind)
-	# # Get a boolean matrix (TRUE = distance matrix contains value)...
-	# num_flows <- nrow(matrix_knn_ind)
-	# max_index <- max(matrix_knn_ind)
-	# boolean_knn <- !is.na(matrix_knn_dist)
-	# 
-	# # ...to get NAs also in the knn-matrix containing the indices
-	# matrix_knn_ind <- ifelse(boolean_knn, matrix_knn_ind,  NA)
-	# 
-	# 
-	# 
-	# 
-	# 
-	# dt_knn <- as.data.table(matrix_knn_ind)
-	# dt_knn$flow_ref <- 1:nrow(matrix_knn_ind)
-	# print("dt_knn: ")
-	# print(dt_knn)
-	# matrix_knn <- dt_knn %>%
-	# 	select(flow_ref, everything()) %>%
-	# 	as.matrix
-	p1 <- proc.time()
+snn_flow <- function(sf_trips, k, eps, minpts, dt_flow_distance) {
 	all_flow_ids <- unique(sf_trips$flow_id)
+	matrix_knn <- cpp_find_knn(df = dt_flow_distance, k = k, all_flow_ids) %>% as.matrix
 	
-	matrix_knn <- cpp_find_knn(df = dt_flow_nd, k = k, all_flow_ids) %>%
-		as.matrix
-
 	
-# 	p1 <- proc.time()
-# 	nns <- dt_flow_nd[, head(.SD[order(distance)], k), by = flow_m]
-# 	p2 <- proc.time()
-# 	time_diff <- p2-p1
-# 	cat("nns: ", time_diff[[3]], " seconds.\n")
-# 	
-# 	p1 <- proc.time()
-# 	
-#   dt_knn <- nns[, {
-# 		nn <- .SD[1:k, flow_n]
-# 		c(list(flow_m = .BY[[1]]), as.list(nn))
-# 	}, by = flow_m]
-# 	dt_knn <- dt_knn[,-1]
-# 	setnames(dt_knn, c("flow_m", paste0("NN", 1:k)))
-# 	all_flow_m <- unique(sf_trips$flow_id)
-# 	missing_flow_m <- setdiff(all_flow_m, dt_knn$flow_m)
-# 	missing_entries <- data.table(flow_m = missing_flow_m)
-# 	missing_entries[, (paste0("NN", 1:k)) := NA]
-# 	dt_knn <- rbindlist(list(dt_knn, missing_entries), fill = TRUE)
-# 	setnames(dt_knn, "flow_m", "flow_ref")
-# 	setorder(dt_knn, flow_ref)
-# 	matrix_knn <- dt_knn %>%
-# 		as.matrix
-# 	
-# 	print(matrix_knn[1184,])
-# 	diff_matrix <- matrix_knn_test - matrix_knn
-# 	return(diff_matrix)
-	p2 <- proc.time()
-	time_diff <- p2-p1
-	cat("matrix_knn: ", time_diff[[3]], " seconds.\n")
-	
+	### 1. Calculate SNN Density -------------------------------------------------
 	p1 <- proc.time()
 	list_df <- cpp_calc_density_n_get_dr_df(dt_knn = matrix_knn,
 																					eps = eps,
 																					int_k = k)
+
 	dt_snn_density <- list_df$snn_density %>% as.data.table()
 	
 	p2 <- proc.time()
