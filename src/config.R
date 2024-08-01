@@ -32,6 +32,7 @@ library(cluster)
 library(fpc)
 library(RANN)
 library(Rfast2)
+library(geosphere)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

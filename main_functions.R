@@ -104,28 +104,60 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 # }
 
 
-main_calc_flow_euclid_dist_mat <- function(sf_trips) {
+main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 	sf_centroids <- st_centroid(sf_trips$geometry)
-	within_radius_pairs <- st_is_within_distance(sf_centroids,
-																							 dist = 1000)
+	sf_buffer <- st_buffer(sf_centroids, dist = buffer)
+	intersections <- st_intersects(sf_buffer, sparse = TRUE)
 	# Extrahiere die Indizes der Paare
-	pairs_list <- lapply(seq_along(within_radius_pairs), function(i) {
-		data.table(flow_m = i, flow_n = unlist(within_radius_pairs[[i]]))
+	pairs_list <- lapply(seq_along(intersections), function(i) {
+		data.table(flow_m = i, flow_n = unlist(intersections[[i]]))
 	})
 	# Kombiniere alle Paare in einem einzigen Dataframe
 	dt_flow_euclid <- rbindlist(pairs_list)
 	dt_flow_euclid <- dt_flow_euclid[flow_m != flow_n]
-	dt_flow_euclid <- dt_flow_euclid[, .(flow_m = pmin(flow_m, flow_n), 
+	
+	dt_flow_euclid <- dt_flow_euclid[, .(flow_m = pmin(flow_m, flow_n),
 													 flow_n = pmax(flow_m, flow_n))]
 	
 	dt_flow_euclid <- unique(dt_flow_euclid)
-	
 	geom_m <- sf_trips$geometry[dt_flow_euclid$flow_m]
 	geom_n <- sf_trips$geometry[dt_flow_euclid$flow_n]
-	distances <- st_distance(geom_m, geom_n, by_element = TRUE)
-	dt_flow_euclid[, distance := as.integer(round(distances))]
+
 	
-	return(dt_flow_euclid)
+	# Following commands need quite some RAM
+	
+	#### !!!!!!!!! DER SCHRITT IST VOR ALLEM ULTRA REDUNDANT, MCH DAS EINMAL GANZ
+	### AM ANFANG FÜR ALLE LINESTRINGS, DANN HAT MAN ALLE PUNKTE DIE MAN BRAUCHT ########
+	sf_startpoints_m <- lwgeom::st_startpoint(geom_m)
+	print("---.25---")
+	sf_startpoints_n <- lwgeom::st_startpoint(geom_n)
+	print("---.5---")
+	sf_endpoints_m <- lwgeom::st_endpoint(geom_n)
+	print("---.75---")
+	sf_endpoints_n <- lwgeom::st_endpoint(geom_n)
+	print("---1---")
+	# Transformation in geographische Koordinaten (WGS 84)
+	start_points_sf1_geo <- st_transform(sf_startpoints_m, crs = 4326)
+	start_points_sf2_geo <- st_transform(sf_startpoints_n, crs = 4326)
+	end_points_sf1_geo <- st_transform(sf_endpoints_m, crs = 4326)
+	end_points_sf2_geo <- st_transform(sf_endpoints_n, crs = 4326)
+	print("---2---")
+	# Distanzen zwischen den Startpunkten
+	start_distances <- distHaversine(st_coordinates(start_points_sf1_geo), st_coordinates(start_points_sf2_geo))
+	print("---3---")
+	# Distanzen zwischen den Endpunkten
+	end_distances <- distHaversine(st_coordinates(end_points_sf1_geo), st_coordinates(end_points_sf2_geo))
+	print("---4---")
+	# Summe der Start- und Endpunkt-Distanzen
+	total_distances <- start_distances + end_distances
+	dt_flow_euclid[, distance := as.integer(round(total_distances))]
+	
+	dt_sym <- rbind(
+		dt_flow_euclid,
+		dt_flow_euclid[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
+	)
+	
+	return(dt_sym)
 }
 
 

@@ -46,26 +46,31 @@ dt_sym <- rbind(
 	dt_flow_nd,
 	dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
 )
-
+dt_flow_nd <- dt_sym
 
 tnd2 <- proc.time()
 time_nd <- tnd2-tnd1
-
-# teuclid1 <- proc.time()
-dt_flow_euclid <- main_calc_flow_euclid_dist_mat(sf_trips_labelled)
-
-
-
+cat("Calculation of network distances took ", time_nd[[3]], " seconds.")
+teuclid1 <- proc.time()
+dt_flow_euclid <- main_calc_flow_euclid_dist_mat(sf_trips_labelled,
+																								 buffer = 200)
 
 
+teuclid2 <- proc.time()
+time_euclid <- teuclid2-teuclid1
+cat("Calculation of euclidean distances took ", time_euclid[[3]], " seconds.")
 
 
 
-# matrix_flow_euclid_dist_geom <- calc_geom_dist_mat(sf_trips_labelled, 
-# 																										matrix_flow_euclid_dist)
-# teuclid2 <- proc.time()
-# time_euclid <- teuclid2-teuclid1
-# cat("Calculation of euclidean distances took ", time_euclid[[3]], " seconds.")
+# ggplot(data = sf_trips_labelled[sf_trips_labelled$flow_id %in%
+# 																	c(1,3220,4993),]) +
+# 	geom_sf(data=st_as_sf(dt_network)) +
+# 	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
+# 	theme_minimal() +
+# 	labs(color = "Cluster ID",
+# 			 title = paste0("Ground truth for",
+# 			 							 trip_file))
+
 ################################################################################
 # 4. Find a good value for k based on the RKD plot
 ################################################################################
@@ -118,16 +123,16 @@ df_cluster_valid <- data.frame(
 
 for(i in 1:nrow(param_grid)){
 	print(i)
-	i = 1
 	int_k <- param_grid[i, "k"]
 	int_eps <-  param_grid[i, "eps"]
 	int_minpts <- param_grid[i, "minpts"]
 	if((i %% 2) == 0) {
-		next
-		dt_snn_pred_euclid <- snn_flow(flow_dist_mat = matrix_flow_euclid_dist,
+		dt_snn_pred_euclid <- snn_flow(sf_trips = sf_trips_labelled,
 																	 k = int_k,
 																	 eps = int_eps,
-																	 minpts = int_minpts)
+																	 minpts = int_minpts,
+																	 dt_flow_distance = dt_flow_euclid)
+		
 		sf_snn_euclid <- dt_snn_pred_euclid %>%
 			left_join(sf_trips_labelled %>% select(flow_id, geometry), 
 								by = c("flow" = "flow_id")) %>%
@@ -144,14 +149,14 @@ for(i in 1:nrow(param_grid)){
 		df_cluster_valid[i, "eps"] <- int_eps
 		df_cluster_valid[i, "minpts"] <- int_minpts
 		df_cluster_valid[i, 5:13] <- sapply(cluster_valid_euclid, `[`, 1)
-		df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_snn_euclid)$sil
-		df_cluster_valid[i, "geom_sil"] <- calc_sil_score(sf_trips = sf_snn_euclid)$geom_sil
+		# df_cluster_valid[i, "sil"] <- calc_sil_score(sf_trips = sf_snn_euclid)$sil
+		# df_cluster_valid[i, "geom_sil"] <- calc_sil_score(sf_trips = sf_snn_euclid)$geom_sil
 	} else {
-		dt_snn_pred_nd <- snn_flow(dt_flow_nd = dt_sym,
-															 sf_trips = sf_trips_labelled,
-															 k = int_k,
-															 eps = int_eps,
-															 minpts = int_minpts)
+		dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips_labelled,
+																k = int_k,
+																eps = int_eps,
+																minpts = int_minpts,
+																dt_flow_distance = dt_flow_nd)
 		sf_snn_nd <- dt_snn_pred_nd %>%
 			left_join(sf_trips_labelled %>% select(flow_id, geometry), 
 								by = c("flow" = "flow_id")) %>%
@@ -176,10 +181,7 @@ for(i in 1:nrow(param_grid)){
 write_rds(df_cluster_valid, here::here("data",
 																			 "cluster_validation_results",
 																			 paste0("cluster_val_ext", trip_file)))
-df_cluster_valid <- read_rds(here::here("data",
-										"cluster_validation_results",
-										paste0("cluster_val_ext_int_cdbw", trip_file)))
-head(df_cluster_valid)
+
 ################################################################################
 # 7. Evaluate the results visually
 ################################################################################
@@ -188,16 +190,16 @@ df_nd <- df_cluster_valid[df_cluster_valid$dist_measure == "nd", ]
 df_nd_sorted <- df_nd[order(desc(df_nd$adj_rand)), ]
 
 # DataFrame für "euclid" filtern und nach adj_rand sortieren
-# df_euclid <- df_cluster_valid[df_cluster_valid$dist_measure == "euclid", ]
-# df_euclid_sorted <- df_euclid[order(desc(df_euclid$adj_rand)), ]
+df_euclid <- df_cluster_valid[df_cluster_valid$dist_measure == "euclid", ]
+df_euclid_sorted <- df_euclid[order(desc(df_euclid$adj_rand)), ]
 
 # Die besten Ergebnisse anzeigen
 cat("Best parameters for 'nd' based on adj_rand:\n")
 print(head(df_nd_sorted))
 
 
-# cat("\nBest parameters for 'euclid' based on adj_rand:\n")
-# print(head(df_euclid_sorted))
+cat("\nBest parameters for 'euclid' based on adj_rand:\n")
+print(head(df_euclid_sorted))
 
 
 
@@ -217,18 +219,11 @@ ggplot(data = sf_trips_labelled[sf_trips_labelled$cluster_id!=0,]) +
 			 title = paste0("Ground truth for",
 			 							 trip_file))
 
-k <- 10
-eps <- 5
-minpts <- 5
 
-# best_euclid_k <- df_euclid_sorted[1, "k"]
-# best_euclid_eps <- df_euclid_sorted[1, "eps"]
-# best_euclid_minpts <- df_euclid_sorted[1, "minpts"]
+best_euclid_k <- df_euclid_sorted[1, "k"]
+best_euclid_eps <- df_euclid_sorted[1, "eps"]
+best_euclid_minpts <- df_euclid_sorted[1, "minpts"]
 
-
-best_euclid_k <- k
-best_euclid_eps <- eps
-best_euclid_minpts <- minpts
 
 dt_snn_pred_euclid <- snn_flow(sf_trips = sf_trips_labelled,
 																					k = best_euclid_k,
@@ -251,19 +246,16 @@ ggplot(data = sf_cluster_euclid_pred[sf_cluster_euclid_pred$cluster_pred!=0,]) +
 			 title = paste0("Euclidean distance cluster result for",
 			 							 " (buffer", char_buffer, "_", trip_file, ")"),)
 
-# best_nd_k <- df_nd_sorted[1, "k"]
-# best_nd_eps <- df_nd_sorted[1, "eps"]
-# best_nd_minpts <- df_nd_sorted[1, "minpts"]
+best_nd_k <- df_nd_sorted[1, "k"]
+best_nd_eps <- df_nd_sorted[1, "eps"]
+best_nd_minpts <- df_nd_sorted[1, "minpts"]
 
-best_nd_k <- k
-best_nd_eps <- eps
-best_nd_minpts <- minpts
 
 
 dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips_labelled,
-													 k = best_euclid_k,
-													 eps = best_euclid_eps,
-													 minpts = best_euclid_minpts,
+													 k = best_nd_k,
+													 eps = best_nd_eps,
+													 minpts = best_nd_minpts,
 													 dt_flow_distance = dt_flow_nd)
 
 
@@ -330,18 +322,18 @@ plot_ly(
 # 				 ))
 
 # Euclidean distance
-# plot2 <- plot_ly(
-# 	df_euclid_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~adj_rand,
-# 	type = 'scatter3d', mode = 'markers',
-# 	marker = list(size = 5)
-# ) %>%
-# 	layout(title = paste0("Adjusted Rand Index for 'euclid'",
-# 												" (buffer", char_buffer, "_", trip_file, ")"),
-# 				 scene = list(
-# 				 	xaxis = list(title = "k"),
-# 				 	yaxis = list(title = "eps"),
-# 				 	zaxis = list(title = "minpts")
-# 				 ))
+plot_ly(
+	df_euclid_sorted, x = ~k, y = ~eps, z = ~minpts, color = ~adj_rand,
+	type = 'scatter3d', mode = 'markers',
+	marker = list(size = 5)
+) %>%
+	layout(title = paste0("Adjusted Rand Index for 'euclid'",
+												" (buffer", char_buffer, "_", trip_file, ")"),
+				 scene = list(
+				 	xaxis = list(title = "k"),
+				 	yaxis = list(title = "eps"),
+				 	zaxis = list(title = "minpts")
+				 ))
 # 
 # subplot(plot1, plot2, nrows = 1, shareX = FALSE, shareY = FALSE, titleX = TRUE, titleY = TRUE)
 # 
