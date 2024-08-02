@@ -25,6 +25,7 @@ char_trip_files <- list.files(char_path_trips)
 trip_file <- char_trip_files[18]
 sf_trips_labelled <- read_rds(here::here(char_path_trips, trip_file)) 
 
+
 char_path_cpp_maps<- here::here("data", "input", "cpp_map_dist_mat")
 char_map_file <- here::here(char_path_cpp_maps,
 														paste0(char_city,

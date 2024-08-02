@@ -105,6 +105,35 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 
 
 main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
+	p1 <- proc.time()
+	
+	
+	
+	sf_trips$startpoint <- lwgeom::st_startpoint(sf_trips$geometry)
+	sf_trips$endpoint <- lwgeom::st_endpoint(sf_trips$geometry)
+	sf_points <- sf_trips %>%
+		select(flow_id, startpoint, endpoint)
+	sf_points$startpoint <- st_transform(st_sfc(sf_points$startpoint, crs = 32632), 
+																			 crs = 4326)
+	
+	sf_points$endpoint <- st_transform(st_sfc(sf_points$endpoint, crs = 32632), 
+																 crs = 4326)
+	print(head(sf_points))
+	startpoints <- data.table(flow_id = sf_points$flow_id, 
+														startpoint = st_coordinates(sf_points$startpoint))
+	endpoints <- data.table(flow_id = sf_points$flow_id, 
+													endpoint = st_coordinates(sf_points$endpoint))
+	
+	setnames(startpoints, c("flow_id", "startpoint_X", "startpoint_Y"))
+	setnames(endpoints, c("flow_id", "endpoint_X", "endpoint_Y"))
+	sf_coords <- merge(startpoints, endpoints, by = "flow_id")
+
+	
+	p2 <- proc.time()
+	print(p2-p1)
+	
+	p1 <- proc.time()
+	
 	sf_centroids <- st_centroid(sf_trips$geometry)
 	sf_buffer <- st_buffer(sf_centroids, dist = buffer)
 	intersections <- st_intersects(sf_buffer, sparse = TRUE)
@@ -120,41 +149,94 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 													 flow_n = pmax(flow_m, flow_n))]
 	
 	dt_flow_euclid <- unique(dt_flow_euclid)
-	geom_m <- sf_trips$geometry[dt_flow_euclid$flow_m]
-	geom_n <- sf_trips$geometry[dt_flow_euclid$flow_n]
+	
+	
+	p2 <- proc.time()
+	print(p2-p1)
+	
+	p1 <- proc.time()
+	
+	dt_merged <- merge(dt_flow_euclid, sf_coords, 
+										 by.x = "flow_m", 
+										 by.y = "flow_id",
+										 suffixes = c("_m", "_n"))
+
+
+	dt_merged <- merge(dt_merged,
+										 sf_coords,
+										 by.x = "flow_n",
+										 by.y = "flow_id",
+										 suffixes = c("_m", "_n"))
+
+	p2 <- proc.time()
+	print(p2-p1)
 
 	
-	# Following commands need quite some RAM
+	p1 <- proc.time()
+	cl <- makeCluster(14)
+	print(cl)
+	registerDoParallel(cl)
 	
-	#### !!!!!!!!! DER SCHRITT IST VOR ALLEM ULTRA REDUNDANT, MCH DAS EINMAL GANZ
-	### AM ANFANG FÜR ALLE LINESTRINGS, DANN HAT MAN ALLE PUNKTE DIE MAN BRAUCHT ########
-	sf_startpoints_m <- lwgeom::st_startpoint(geom_m)
-	print("---.25---")
-	sf_startpoints_n <- lwgeom::st_startpoint(geom_n)
-	print("---.5---")
-	sf_endpoints_m <- lwgeom::st_endpoint(geom_n)
-	print("---.75---")
-	sf_endpoints_n <- lwgeom::st_endpoint(geom_n)
-	print("---1---")
-	# Transformation in geographische Koordinaten (WGS 84)
-	start_points_sf1_geo <- st_transform(sf_startpoints_m, crs = 4326)
-	start_points_sf2_geo <- st_transform(sf_startpoints_n, crs = 4326)
-	end_points_sf1_geo <- st_transform(sf_endpoints_m, crs = 4326)
-	end_points_sf2_geo <- st_transform(sf_endpoints_n, crs = 4326)
-	print("---2---")
-	# Distanzen zwischen den Startpunkten
-	start_distances <- distHaversine(st_coordinates(start_points_sf1_geo), st_coordinates(start_points_sf2_geo))
-	print("---3---")
-	# Distanzen zwischen den Endpunkten
-	end_distances <- distHaversine(st_coordinates(end_points_sf1_geo), st_coordinates(end_points_sf2_geo))
-	print("---4---")
-	# Summe der Start- und Endpunkt-Distanzen
-	total_distances <- start_distances + end_distances
-	dt_flow_euclid[, distance := as.integer(round(total_distances))]
+	# Funktion zur Berechnung der Haversine-Distanz mit Fortschrittsanzeige
+	calculate_haversine <- function(i, dt) {
+		if (i %% 1000 == 0) {
+			print(paste("Processing row:", i))
+		}
+		start_dist <- distHaversine(c(dt$startpoint_X_m[i], dt$startpoint_Y_m[i]), c(dt$startpoint_X_n[i], dt$startpoint_Y_n[i]))
+		end_dist <- distHaversine(c(dt$endpoint_X_m[i], dt$endpoint_Y_m[i]), c(dt$endpoint_X_n[i], dt$endpoint_Y_n[i]))
+		c(start_dist, end_dist)
+	}
+	
+	# Berechnung mit foreach und Zeitmessung
+	start_time <- Sys.time()
+	distances <- foreach(i = 1:nrow(dt_merged), .combine = rbind, .packages = 'geosphere') %dopar% {
+		calculate_haversine(i, dt_merged)
+	}
+	print(distances)
+	end_time <- Sys.time()
+	
+	# Ergebnisse in dt_merged speichern
+	distances_matrix <- do.call(rbind, distances)
+	dt_merged[, dist_start := distances_matrix[, 1]]
+	dt_merged[, dist_end := distances_matrix[, 2]]
+	dt_merged[, total_dist := dist_start + dist_end]
+	
+	# Zeit anzeigen
+	print(end_time - start_time)
+	
+	# Ergebnis anzeigen
+	print(head(dt_merged))
+	
+	# Stoppe den Cluster
+	stopCluster(cl)
+	return(distances)
+	p1 <- proc.time()
+	
+	# calculate_haversine <- function(lon1, lat1, lon2, lat2) {
+	# 	distHaversine(c(lon1, lat1), c(lon2, lat2))
+	# }
+	# 
+	# # Anwendung der Funktion auf jede Zeile des DataTables
+	# dt_merged[, dist_start := mapply(calculate_haversine, 
+	# 																			startpoint_X_m, 
+	# 																			startpoint_Y_m, 
+	# 																			startpoint_X_n, 
+	# 																			startpoint_Y_n)]
+	# dt_merged[, dist_start := mapply(calculate_haversine, 
+	# 																			endpoint_X_m, 
+	# 																			endpoint_Y_m, 
+	# 																			endpoint_X_n, 
+	# 																			endpoint_Y_n)]
+	
+	p2 <- proc.time()
+	print(p2-p1)
+	
+	print(head(dt_merged))
+	dt_merged[, distance := as.integer(round(dist_start+dist_end))]
 	
 	dt_sym <- rbind(
-		dt_flow_euclid,
-		dt_flow_euclid[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
+		dt_merged,
+		dt_merged[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
 	)
 	
 	return(dt_sym)

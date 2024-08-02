@@ -33,6 +33,9 @@ library(fpc)
 library(RANN)
 library(Rfast2)
 library(geosphere)
+library(foreach)
+library(doParallel)
+
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
