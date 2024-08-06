@@ -12,28 +12,46 @@ source("./src/functions.R")
 main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 	
 	### 1. Prepare the data ------------------------------------------------------
-	sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
-	sf_trips$dest_geom <- lwgeom::st_endpoint(sf_trips$geometry)
+	# sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
+	# sf_trips$dest_geom <- lwgeom::st_endpoint(sf_trips$geometry)
+
 	
+
 	
 	dt_origin <- sf_trips %>%
-		st_set_geometry("origin_geom") %>%
-		select(flow_id, origin_id, origin_geom) %>%
+		st_set_geometry("o_closest_point") %>%
+		select(flow_id, origin_id, o_closest_point) %>%
 		rename("id" = "flow_id",
 					 "id_edge" = "origin_id",
-					 "geom" = "origin_geom") %>%
+					 "geom" = "o_closest_point") %>%
 		as.data.table()
 	
+	# dt_origin <- sf_trips %>%
+	# 	st_set_geometry("origin_geom") %>%
+	# 	select(flow_id, origin_id, origin_geom) %>%
+	# 	rename("id" = "flow_id",
+	# 				 "id_edge" = "origin_id",
+	# 				 "geom" = "origin_geom") %>%
+	# 	as.data.table()
 	dt_origin <- add_dist_start_end(dt_origin)
 	
+
+	
 	dt_dest <- sf_trips %>%
-		st_set_geometry("dest_geom") %>%
-		select(flow_id, dest_id, dest_geom) %>%
+		st_set_geometry("d_closest_point") %>%
+		select(flow_id, dest_id, d_closest_point) %>%
 		rename("id" = "flow_id",
 					 "id_edge" = "dest_id",
-					 "geom" = "dest_geom") %>% 
+					 "geom" = "d_closest_point") %>%
 		as.data.table
-	
+
+	# dt_dest <- sf_trips %>%
+	# 	st_set_geometry("dest_geom") %>%
+	# 	select(flow_id, dest_id, dest_geom) %>%
+	# 	rename("id" = "flow_id",
+	# 				 "id_edge" = "dest_id",
+	# 				 "geom" = "dest_geom") %>%
+	# 	as.data.table
 	dt_dest <- add_dist_start_end(dt_dest)
 	
 	
@@ -41,37 +59,54 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 	dt_network <- dt_network %>%
 		select(source, target, id, geom_way)
 	
+	dt_origin <- dt_origin %>%
+		arrange(id)
+
+	dt_dest <- dt_dest %>%
+		arrange(id)
 	
-	
+
 	### 2. Calc ND between OD flows ----------------------------------------------
 	# ND between origin points
 	dt_o_pts_nd <- parallel_process_networks(dt_origin, 
 																					dt_network,
 																					dt_dist_mat,
-																					int_cores)
+																					int_cores,
+																					paste0("./data/",
+																								 char_data,
+																								 "_",
+																								 char_buffer,
+																								 "_nd_origin.csv"))
+	
 	
 	#print("ND between origin points calculated")
 	# ND between dest points
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,
 																					 dt_dist_mat,
-																					 int_cores)
+																					 int_cores,
+																					 paste0("./data/",
+																					 			 char_data,
+																					 			 "_",
+																					 			 char_buffer,
+																					 			 "_nd_dest.csv"))
 	
 	
 	#print("ND between dest points calculated")
 	# ND between OD flows
-	dt_flow_nd <- dt_o_pts_nd %>%
-		inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
-		mutate(distance = distance.x + distance.y) %>%
-		select(flow_m = from, flow_n = to, distance) %>%
-		as.data.table
-	
-	dt_flow_nd <- dt_flow_nd %>%
-		group_by(flow_m) %>%
-		mutate(row_id = row_number()) %>%
-		ungroup() %>%
-		as.data.table
-	return(dt_flow_nd)
+	# dt_flow_nd <- dt_o_pts_nd %>%
+	# 	inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
+	# 	mutate(distance = distance.x + distance.y) %>%
+	# 	select(flow_m = from, flow_n = to, distance) %>%
+	# 	as.data.table
+	# 
+	# dt_flow_nd <- dt_flow_nd %>%
+	# 	group_by(flow_m) %>%
+	# 	mutate(row_id = row_number()) %>%
+	# 	ungroup() %>%
+	# 	as.data.table
+	return(list("dt_o_pts_nd" = dt_o_pts_nd,
+							 "dt_d_pts_nd" = dt_d_pts_nd))
 	### 3. Calc OD-flow ND matrix ------------------------------------------------
 	# matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
 	# print("matrix conversion successful")
@@ -105,10 +140,8 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 
 
 main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
-	p1 <- proc.time()
 	
-	
-	
+	# Get sf-vectors of start- and endpoints
 	sf_trips$startpoint <- lwgeom::st_startpoint(sf_trips$geometry)
 	sf_trips$endpoint <- lwgeom::st_endpoint(sf_trips$geometry)
 	sf_points <- sf_trips %>%
@@ -118,7 +151,6 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 	
 	sf_points$endpoint <- st_transform(st_sfc(sf_points$endpoint, crs = 32632), 
 																 crs = 4326)
-	print(head(sf_points))
 	startpoints <- data.table(flow_id = sf_points$flow_id, 
 														startpoint = st_coordinates(sf_points$startpoint))
 	endpoints <- data.table(flow_id = sf_points$flow_id, 
@@ -129,33 +161,25 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 	sf_coords <- merge(startpoints, endpoints, by = "flow_id")
 
 	
-	p2 <- proc.time()
-	print(p2-p1)
 	
-	p1 <- proc.time()
-	
+	# Get sf-linestrings within buffer-area für each linestring
 	sf_centroids <- st_centroid(sf_trips$geometry)
 	sf_buffer <- st_buffer(sf_centroids, dist = buffer)
 	intersections <- st_intersects(sf_buffer, sparse = TRUE)
-	# Extrahiere die Indizes der Paare
 	pairs_list <- lapply(seq_along(intersections), function(i) {
 		data.table(flow_m = i, flow_n = unlist(intersections[[i]]))
 	})
-	# Kombiniere alle Paare in einem einzigen Dataframe
 	dt_flow_euclid <- rbindlist(pairs_list)
 	dt_flow_euclid <- dt_flow_euclid[flow_m != flow_n]
-	
 	dt_flow_euclid <- dt_flow_euclid[, .(flow_m = pmin(flow_m, flow_n),
 													 flow_n = pmax(flow_m, flow_n))]
 	
+	# 'dt_flow_euclid' contains all the combinations for which dists are calculated
 	dt_flow_euclid <- unique(dt_flow_euclid)
 	
 	
-	p2 <- proc.time()
-	print(p2-p1)
-	
-	p1 <- proc.time()
-	
+
+	# 'dt_merged' combines the combinations with the corresponding geometric features
 	dt_merged <- merge(dt_flow_euclid, sf_coords, 
 										 by.x = "flow_m", 
 										 by.y = "flow_id",
@@ -168,79 +192,60 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 										 by.y = "flow_id",
 										 suffixes = c("_m", "_n"))
 
-	p2 <- proc.time()
-	print(p2-p1)
 
 	
-	p1 <- proc.time()
+	# Parallelize distance calculation
+	# Function to split indices into blocks
+	split_indices <- function(n, nb) {
+		split(1:n, cut(1:n, nb, labels = FALSE))
+	}
+	
+	# Function to calculate haversine distances for a block of indices
+	calculate_haversine_block <- function(block_indices, dt) {
+		result <- t(sapply(block_indices, function(i) {
+			start_dist <- distHaversine(c(dt$startpoint_X_m[i], dt$startpoint_Y_m[i]), c(dt$startpoint_X_n[i], dt$startpoint_Y_n[i]))
+			end_dist <- distHaversine(c(dt$endpoint_X_m[i], dt$endpoint_Y_m[i]), c(dt$endpoint_X_n[i], dt$endpoint_Y_n[i]))
+			c(start_dist, end_dist)
+		}))
+		return(result)
+	}
+	
+	
+	# Create a cluster with 14 cores
 	cl <- makeCluster(14)
-	print(cl)
 	registerDoParallel(cl)
 	
-	# Funktion zur Berechnung der Haversine-Distanz mit Fortschrittsanzeige
-	calculate_haversine <- function(i, dt) {
-		if (i %% 1000 == 0) {
-			print(paste("Processing row:", i))
-		}
-		start_dist <- distHaversine(c(dt$startpoint_X_m[i], dt$startpoint_Y_m[i]), c(dt$startpoint_X_n[i], dt$startpoint_Y_n[i]))
-		end_dist <- distHaversine(c(dt$endpoint_X_m[i], dt$endpoint_Y_m[i]), c(dt$endpoint_X_n[i], dt$endpoint_Y_n[i]))
-		c(start_dist, end_dist)
+	# Ensure the cluster is stopped after use
+	on.exit(stopCluster(cl), add = TRUE)
+	
+	# Split the data into blocks
+	n_blocks <- 14
+	blocks <- split_indices(nrow(dt_merged), n_blocks)
+	
+	# Using foreach to calculate distances in parallel for each block
+	distances <- foreach(block = blocks, .combine = rbind, .packages = 'geosphere') %dopar% {
+		calculate_haversine_block(block, dt_merged)
 	}
-	
-	# Berechnung mit foreach und Zeitmessung
-	start_time <- Sys.time()
-	distances <- foreach(i = 1:nrow(dt_merged), .combine = rbind, .packages = 'geosphere') %dopar% {
-		calculate_haversine(i, dt_merged)
-	}
-	print(distances)
-	end_time <- Sys.time()
-	
-	# Ergebnisse in dt_merged speichern
-	distances_matrix <- do.call(rbind, distances)
-	dt_merged[, dist_start := distances_matrix[, 1]]
-	dt_merged[, dist_end := distances_matrix[, 2]]
-	dt_merged[, total_dist := dist_start + dist_end]
-	
-	# Zeit anzeigen
-	print(end_time - start_time)
-	
-	# Ergebnis anzeigen
+
+	# Add the distances to dt_merged
+	dt_merged$start_dist <- distances[, 1]
+	dt_merged$end_dist <- distances[, 2]
+	dt_merged$distance <- rowSums(distances)
 	print(head(dt_merged))
+
+	dt_merged <- dt_merged %>%
+		select(flow_m, flow_n, distance)
 	
-	# Stoppe den Cluster
-	stopCluster(cl)
-	return(distances)
-	p1 <- proc.time()
-	
-	# calculate_haversine <- function(lon1, lat1, lon2, lat2) {
-	# 	distHaversine(c(lon1, lat1), c(lon2, lat2))
-	# }
-	# 
-	# # Anwendung der Funktion auf jede Zeile des DataTables
-	# dt_merged[, dist_start := mapply(calculate_haversine, 
-	# 																			startpoint_X_m, 
-	# 																			startpoint_Y_m, 
-	# 																			startpoint_X_n, 
-	# 																			startpoint_Y_n)]
-	# dt_merged[, dist_start := mapply(calculate_haversine, 
-	# 																			endpoint_X_m, 
-	# 																			endpoint_Y_m, 
-	# 																			endpoint_X_n, 
-	# 																			endpoint_Y_n)]
-	
-	p2 <- proc.time()
-	print(p2-p1)
-	
-	print(head(dt_merged))
-	dt_merged[, distance := as.integer(round(dist_start+dist_end))]
 	
 	dt_sym <- rbind(
 		dt_merged,
 		dt_merged[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
 	)
 	
+
 	return(dt_sym)
 }
+
 
 
 # Documentation: snn_flow

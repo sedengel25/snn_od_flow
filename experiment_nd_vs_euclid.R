@@ -8,9 +8,13 @@ source("./main_functions.R")
 char_city <- "col"
 dt_network <- st_read(con, paste0(char_city,
 																	"_2po_4pgr")) %>% as.data.table
+
+ggplot() +
+	geom_sf(data=st_as_sf(dt_network)) 
+
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[4]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[8]
 print(char_dt_dist_mat)
 char_buffer <- strsplit(char_dt_dist_mat, "_")[[1]][2]
 dt_dist_mat <- read_rds(here::here(
@@ -54,8 +58,8 @@ time_nd <- tnd2-tnd1
 cat("Calculation of network distances took ", time_nd[[3]], " seconds.")
 teuclid1 <- proc.time()
 dt_flow_euclid <- main_calc_flow_euclid_dist_mat(sf_trips_labelled,
-																								 buffer = 200)
-
+																								 buffer = 300)
+str(dt_flow_euclid)
 
 teuclid2 <- proc.time()
 time_euclid <- teuclid2-teuclid1
@@ -64,7 +68,7 @@ cat("Calculation of euclidean distances took ", time_euclid[[3]], " seconds.")
 
 
 # ggplot(data = sf_trips_labelled[sf_trips_labelled$flow_id %in%
-# 																	c(1,3220,4993),]) +
+# 																	c(53474, 53473, 53472, 53471, 53470),]) +
 # 	geom_sf(data=st_as_sf(dt_network)) +
 # 	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
 # 	theme_minimal() +
@@ -182,7 +186,9 @@ for(i in 1:nrow(param_grid)){
 write_rds(df_cluster_valid, here::here("data",
 																			 "cluster_validation_results",
 																			 paste0("cluster_val_ext", trip_file)))
-
+df_cluster_valid <- read_rds(here::here("data",
+																				"cluster_validation_results",
+																				paste0("cluster_val_ext", trip_file)))
 ################################################################################
 # 7. Evaluate the results visually
 ################################################################################
@@ -264,9 +270,7 @@ sf_cluster_nd_pred <- sf_trips_labelled %>%
 	left_join(dt_snn_pred_nd, by = c("flow_id" = "flow")) %>%
 	select(cluster_pred, geometry)
 
-# dir.create()
-# char_path_plots <- here::here()
-	
+
 	
 ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	geom_sf(data=st_as_sf(dt_network)) +

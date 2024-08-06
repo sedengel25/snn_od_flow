@@ -32,10 +32,10 @@ library(cluster)
 library(fpc)
 library(RANN)
 library(Rfast2)
+library(doParallel)
 library(geosphere)
 library(foreach)
-library(doParallel)
-
+library(bigstatsr)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

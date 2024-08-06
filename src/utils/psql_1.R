@@ -140,48 +140,87 @@ psql1_create_index <- function(con, table, col) {
 # Returns: ...
 # Output: ...
 # Action: psql-query
-psql1_map_od_points_onto_network <- function(con, table_network) {
-	query <- paste0("ALTER TABLE mapped_points
-  ADD COLUMN o_dist_to_start double precision,
-  ADD COLUMN o_dist_to_end double precision,
-  ADD COLUMN d_dist_to_start double precision,
-  ADD COLUMN d_dist_to_end double precision,
-  ADD COLUMN id_edge bigint;")
+psql1_map_od_points_onto_network <- function(con, table_network, table_trips) {
+	# Hinzufügen der notwendigen Spalten
+	query <- paste0("ALTER TABLE ", table_trips, "
+    ADD COLUMN IF NOT EXISTS o_closest_point geometry(Point, 32632),
+    ADD COLUMN IF NOT EXISTS d_closest_point geometry(Point, 32632),
+    ADD COLUMN IF NOT EXISTS o_dist_to_start double precision,
+    ADD COLUMN IF NOT EXISTS o_dist_to_end double precision,
+    ADD COLUMN IF NOT EXISTS d_dist_to_start double precision,
+    ADD COLUMN IF NOT EXISTS d_dist_to_end double precision,
+    ADD COLUMN IF NOT EXISTS id_edge_origin bigint,
+    ADD COLUMN IF NOT EXISTS id_edge_dest bigint,
+    ADD COLUMN IF NOT EXISTS trip_distance double precision;")
 	dbExecute(con, query)
 	
-	query <- paste0("
-  UPDATE mapped_points mp
-  SET 
-      origin_geom = sub.origin_geom,
-      dest_geom = sub.dest_geom,
+	# Update-Query für origin_geom
+	query_origin <- paste0("
+    UPDATE ", table_trips, " mp
+    SET 
+      o_closest_point = sub.o_closest_point,
       o_dist_to_start = sub.o_dist_to_start,
       o_dist_to_end = sub.o_dist_to_end,
+      id_edge_origin = sub.id_edge_origin
+    FROM (
+      SELECT
+        p.id_new,
+        n.id AS id_edge_origin,
+        ST_ClosestPoint(n.geom_way, p.origin_geom) AS o_closest_point,
+        ST_Distance(ST_ClosestPoint(n.geom_way, p.origin_geom), ST_StartPoint(n.geom_way)) AS o_dist_to_start,
+        ST_Distance(ST_ClosestPoint(n.geom_way, p.origin_geom), ST_EndPoint(n.geom_way)) AS o_dist_to_end
+      FROM
+        ", table_trips, " p
+      CROSS JOIN LATERAL
+        (SELECT id, geom_way
+         FROM ", table_network, "
+         ORDER BY geom_way <-> p.origin_geom
+         LIMIT 1
+        ) AS n
+    ) sub
+    WHERE mp.id_new = sub.id_new;")
+	cat(query_origin)
+	dbExecute(con, query_origin)
+	
+	# Update-Query für dest_geom
+	query_dest <- paste0("
+    UPDATE ", table_trips, " mp
+    SET 
+      d_closest_point = sub.d_closest_point,
       d_dist_to_start = sub.d_dist_to_start,
       d_dist_to_end = sub.d_dist_to_end,
-      id_edge = sub.id
-  FROM (
+      id_edge_dest = sub.id_edge_dest
+    FROM (
       SELECT
-          p.id_new,
-          n.id,
-          ST_ClosestPoint(n.geom_way, p.origin_geom) AS origin_geom,
-          ST_ClosestPoint(n.geom_way, p.dest_geom) AS dest_geom,
-          ST_Distance(ST_ClosestPoint(n.geom_way, p.origin_geom), ST_StartPoint(n.geom_way)) AS o_dist_to_start,
-          ST_Distance(ST_ClosestPoint(n.geom_way, p.origin_geom), ST_EndPoint(n.geom_way)) AS o_dist_to_end,
-          ST_Distance(ST_ClosestPoint(n.geom_way, p.dest_geom), ST_StartPoint(n.geom_way)) AS d_dist_to_start,
-          ST_Distance(ST_ClosestPoint(n.geom_way, p.dest_geom), ST_EndPoint(n.geom_way)) AS d_dist_to_end
+        p.id_new,
+        n.id AS id_edge_dest,
+        ST_ClosestPoint(n.geom_way, p.dest_geom) AS d_closest_point,
+        ST_Distance(ST_ClosestPoint(n.geom_way, p.dest_geom), ST_StartPoint(n.geom_way)) AS d_dist_to_start,
+        ST_Distance(ST_ClosestPoint(n.geom_way, p.dest_geom), ST_EndPoint(n.geom_way)) AS d_dist_to_end
       FROM
-          mapped_points p
-  		CROSS JOIN LATERAL
-  		  (SELECT id, geom_way
-  		   FROM ", table_network, "
-  		   ORDER BY geom_way <-> p.origin_geom
-  		   LIMIT 1
-  		  ) AS n
-  ) sub
-  WHERE mp.id_new = sub.id_new;")
-	cat(query)
-	dbExecute(con, query)
+        ", table_trips, " p
+      CROSS JOIN LATERAL
+        (SELECT id, geom_way
+         FROM ", table_network, "
+         ORDER BY geom_way <-> p.dest_geom
+         LIMIT 1
+        ) AS n
+    ) sub
+    WHERE mp.id_new = sub.id_new;")
+	cat(query_dest)
+	dbExecute(con, query_dest)
+	
+	# Update-Query für trip_distance
+	query_trip_distance <- paste0("
+    UPDATE ", table_trips, "
+    SET trip_distance = ST_Distance(origin_geom, dest_geom);")
+	cat(query_trip_distance)
+	dbExecute(con, query_trip_distance)
 }
+
+
+
+
 
 
 

@@ -11,10 +11,10 @@ sourceCpp("./src/helper_functions.cpp")
 ################################################################################
 list.files(path = path_bbox_coordinates, pattern = "*.poly")
 
-char_region_abb <- "col"
+char_region_abb <- "dd"
 
 char_polygon_filename <- paste0(char_region_abb, ending_polygon)   
-
+char_polygon_filename <- "dd_large.poly"
 char_polygon_file <- here::here(path_bbox_coordinates,
 																char_polygon_filename) 
 
@@ -35,9 +35,9 @@ char_sql_filename <- paste0(char_network, ".sql")
 ################################################################################
 # 1. Create routable network from given region
 ################################################################################
-# osmconvert_create_sub_osm_pbf()
-#
-# osm2po_create_routable_network()
+osmconvert_create_sub_osm_pbf()
+
+osm2po_create_routable_network()
 
 ################################################################################
 # 2. Create local node distance matrix
@@ -46,7 +46,7 @@ sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
 
-int_buffer <- 100
+int_buffer <- 4000
 
 dt_dist_mat <- calc_local_node_dist_mat(buffer = int_buffer)
 
