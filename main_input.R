@@ -14,7 +14,7 @@ list.files(path = path_bbox_coordinates, pattern = "*.poly")
 char_region_abb <- "dd"
 
 char_polygon_filename <- paste0(char_region_abb, ending_polygon)   
-char_polygon_filename <- "dd_large.poly"
+
 char_polygon_file <- here::here(path_bbox_coordinates,
 																char_polygon_filename) 
 
