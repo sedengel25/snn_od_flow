@@ -126,7 +126,7 @@ unique(indutry_trips$device_id)
 # Playground
 ################################################################################
 sf_cluster_nd_pred <- st_read(con, "cluster_test_sr_dd_large")
-
+st_geometry(sf_cluster_nd_pred) <- sf_cluster_nd_pred$line_geom
 cluster_ids <- 1:max(sf_cluster_nd_pred$cluster_pred)
 
 # Leere Liste für Polygone
@@ -139,23 +139,25 @@ for (cluster_id in cluster_ids) {
 		filter(cluster_pred == cluster_id) %>%
 		summarize(geometry = st_union(line_geom) %>% st_convex_hull())
 	polygon_list[[as.character(cluster_id)]] <- polygon
-
 }
+
 polygons <- do.call(rbind, polygon_list)
 polygons$cluster_id <- 1:max(sf_cluster_nd_pred$cluster_pred)
-
-
-
-
-
 
 # Funktion zur Berechnung der Übereinstimmungsfläche zwischen zwei Polygonen
 calculate_overlap <- function(poly1, poly2) {
 	intersection <- st_intersection(poly1, poly2)
 	if (length(intersection) == 0 || is.null(st_area(intersection))) {
-		return(0)
+		return(list(overlap = 0, intersection = NULL))
 	} else {
-		return(as.numeric(st_area(intersection) / min(st_area(poly1), st_area(poly2))))
+		# Berechnen der Schnittfläche
+		intersection_area <- st_area(intersection)
+		# Berechnen der Überlappung für beide Polygone
+		overlap1 <- as.numeric(intersection_area / st_area(poly1))
+		overlap2 <- as.numeric(intersection_area / st_area(poly2))
+		# Mitteln der beiden Überlappungen
+		mean_overlap <- (overlap1 + overlap2) / 2
+		return(list(overlap = mean_overlap, intersection = intersection))
 	}
 }
 
@@ -165,6 +167,7 @@ polygons <- polygons %>%
 
 # Leere Liste für Ergebnisse
 results <- list()
+intersections <- list()
 
 # Loop durch jedes Polygon
 for (i in 1:nrow(polygons)) {
@@ -175,19 +178,21 @@ for (i in 1:nrow(polygons)) {
 	# Finden der Polygone innerhalb eines Radius von 500 Metern
 	distances <- st_distance(polygons$centroid, centroid1)
 	neighbors <- polygons %>%
-		filter(distances < units::set_units(500, "m") & row_number() != i)
+		filter(distances < units::set_units(1000, "m") & row_number() != i)
 	
 	max_overlap <- 0
 	best_match <- NULL
+	best_intersection <- NULL
 	
 	# Berechnen der Übereinstimmungsfläche mit jedem Nachbarpolygon
 	for (j in 1:nrow(neighbors)) {
 		poly2 <- neighbors[j,]
-		overlap <- calculate_overlap(poly1$geometry, poly2$geometry)
+		result <- calculate_overlap(poly1$geometry, poly2$geometry)
 		
-		if (overlap > max_overlap) {
-			max_overlap <- overlap
+		if (result$overlap > max_overlap) {
+			max_overlap <- result$overlap
 			best_match <- poly2
+			best_intersection <- result$intersection
 		}
 	}
 	
@@ -196,10 +201,30 @@ for (i in 1:nrow(polygons)) {
 		best_match_id = ifelse(is.null(best_match), NA, best_match$cluster_id),
 		max_overlap = max_overlap
 	)
+	
+	if (!is.null(best_intersection)) {
+		intersections[[i]] <- st_sf(
+			polygon_id_1 = i,
+			polygon_id_2 = ifelse(is.null(best_match), NA, best_match$cluster_id),
+			geometry = best_intersection
+		)
+	}
 }
 
 # Ergebnisse in einen DataFrame konvertieren
 results_df <- do.call(rbind, results)
+results_df
+results_df %>%
+	arrange(desc(max_overlap))
 
-# Anzeigen der Ergebnisse
-print(results_df)
+
+results_df %>%
+	filter(max_overlap <= 0.7)
+
+
+intersections_sf <- do.call(rbind, intersections)
+intersections_sf <- st_set_crs(intersections_sf, st_crs(polygons))
+plot(st_geometry(polygons[c(162,163),]))
+
+st_intersection(polygons[c(89,107),])
+
