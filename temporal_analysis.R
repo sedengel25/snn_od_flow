@@ -4,7 +4,7 @@ source("./main_functions.R")
 
 char_city <- "dd"
 char_prefix_data <- "sr"
-char_data <- paste0(char_prefix_data, "_", char_city)
+char_data <- paste0(char_prefix_data, "_", char_city, "_cluster")
 sf_cluster_nd_pred <- st_read(con, char_data)
 
 sf_cluster_nd_pred$start_time <- as.POSIXct(
@@ -18,8 +18,8 @@ sf_cluster_nd_pred$weekday <- lubridate::wday(sf_cluster_nd_pred$start_time,
 																							week_start = 1)
 sf_cluster_nd_pred$date <- as.Date(sf_cluster_nd_pred$start_time)
 
-cluster_a <- 144
-cluster_b <- 199
+cluster_a <- 89
+cluster_b <- 90
 sf_cluster <- sf_cluster_nd_pred %>%
 	filter(cluster_pred == cluster_a | cluster_pred == cluster_b) %>%
 	mutate(direction = case_when(

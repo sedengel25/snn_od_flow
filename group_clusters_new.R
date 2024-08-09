@@ -81,7 +81,10 @@ char_data <- paste0(char_prefix_data, "_", char_city)
 buffer <- 500
 
 sf_cluster_nd_pred <- st_read(con, paste0(char_data, "_cluster"))
-st_geometry(sf_cluster_nd_pred) <- sf_cluster_nd_pred$line_geom
+line_counts <- sf_cluster_nd_pred %>%
+	group_by(cluster_pred) %>%
+	summarize(count = n())
+
 cluster_ids <- 1:max(sf_cluster_nd_pred$cluster_pred)
 
 # Leere Liste für Polygone und zentrale Linestrings
@@ -91,6 +94,7 @@ central_linestrings <- list()
 # Loop durch die Cluster und berechne die konvexen Hüllen sowie zentrale Linestrings
 for (cluster_id in cluster_ids) {
 	print(cluster_id)
+	
 	cluster_data <- sf_cluster_nd_pred %>% filter(cluster_pred == cluster_id)
 	polygon <- cluster_data %>%
 		summarize(geometry = st_union(line_geom) %>% st_convex_hull())
@@ -116,6 +120,8 @@ for (i in 1:nrow(polygons)) {
 	poly1 <- polygons[i,]
 	centroid1 <- poly1$centroid
 	line1 <- central_linestrings[[as.character(poly1$cluster_id)]]
+	cluster_id_1 <- as.character(poly1$cluster_id)
+	count1 <- line_counts$count[line_counts$cluster_pred == as.numeric(cluster_id_1)]  
 	
 	# Finden der Polygone innerhalb eines Radius von 1000 Metern
 	distances <- st_distance(polygons$centroid, centroid1)
@@ -131,7 +137,9 @@ for (i in 1:nrow(polygons)) {
 			combined_metric = NA,
 			top_1_id = NA,
 			top_2_id = NA,
-			top_3_id = NA
+			top_3_id = NA,
+			count1 = count1,  # Anzahl der Linienstrings in polygon_id
+			count2 = NA  # Anzahl der Linienstrings in best_match_id
 		)
 		next
 	}
@@ -142,6 +150,8 @@ for (i in 1:nrow(polygons)) {
 		overlap_metric = numeric(),
 		angle_metric = numeric(),
 		combined_metric = numeric(),
+		count1 = integer(),
+		count2 = integer(),
 		best_intersection = st_sfc()
 	)
 	
@@ -149,7 +159,7 @@ for (i in 1:nrow(polygons)) {
 	for (j in 1:nrow(neighbors)) {
 		poly2 <- neighbors[j,]
 		cluster_id_2 <- as.character(poly2$cluster_id)
-		
+		count2 <- line_counts$count[line_counts$cluster_pred == as.numeric(cluster_id_2)]  
 		if (!is.null(cluster_id_2) && cluster_id_2 %in% names(central_linestrings)) {
 			line2 <- central_linestrings[[cluster_id_2]]
 			
@@ -165,6 +175,8 @@ for (i in 1:nrow(polygons)) {
 				overlap_metric = overlap_metric,
 				angle_metric = angle_metric,
 				combined_metric = combined_metric,
+				count1 = count1,
+				count2 = count2,
 				best_intersection = result$intersection
 			))
 		}
@@ -179,7 +191,9 @@ for (i in 1:nrow(polygons)) {
 			combined_metric = NA,
 			top_1_id = NA,
 			top_2_id = NA,
-			top_3_id = NA
+			top_3_id = NA,
+			count1 = count1,  
+			count2 = NA  
 		)
 	} else {
 		metrics <- metrics %>% arrange(desc(combined_metric))
@@ -195,7 +209,9 @@ for (i in 1:nrow(polygons)) {
 			combined_metric = top_3$combined_metric[1],
 			top_1_id = top_3$cluster_id[1],
 			top_2_id = ifelse(nrow(top_3) > 1, top_3$cluster_id[2], NA),
-			top_3_id = ifelse(nrow(top_3) > 2, top_3$cluster_id[3], NA)
+			top_3_id = ifelse(nrow(top_3) > 2, top_3$cluster_id[3], NA),
+			count1 = count1,  
+			count2 = ifelse(nrow(top_3) > 0, top_3$count2[1], NA)
 		)
 	}
 	
@@ -212,4 +228,5 @@ for (i in 1:nrow(polygons)) {
 results_df <- do.call(rbind, results)
 
 results_df %>%
-	arrange(desc(combined_metric))
+	arrange(desc(combined_metric)) %>%
+	select(-overlap_metric, -angle_metric)

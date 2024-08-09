@@ -95,12 +95,12 @@ table(dt_snn_pred_nd$cluster_pred)
 sf_cluster_nd_pred <- sf_trips %>%
 	left_join(dt_snn_pred_nd, by = c("flow_id" = "flow"))
 st_drop_geometry(sf_cluster_nd_pred)
-
-sf_cluster_nd_pred <- sf_cluster_nd_pred %>%
-	select(-o_closest_point, -d_closest_point)
-
-
 st_geometry(sf_cluster_nd_pred) <- "line_geom"
+sf_cluster_nd_pred <- sf_cluster_nd_pred %>%
+	select(-origin_geom, -dest_geom, -o_closest_point, -d_closest_point)
+
+
+
 
 ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	geom_sf(data=sf_network) +
