@@ -1,6 +1,23 @@
 library(sf)
 library(dplyr)
 library(units)
+source("./src/config.R")
+
+calculate_overlap <- function(poly1, poly2) {
+	intersection <- st_intersection(poly1, poly2)
+	if (length(intersection) == 0 || is.null(st_area(intersection))) {
+		return(list(overlap = 0, intersection = NULL))
+	} else {
+		# Berechnen der Schnittfläche
+		intersection_area <- st_area(intersection)
+		# Berechnen der Überlappung für beide Polygone
+		overlap1 <- as.numeric(intersection_area / st_area(poly1))
+		overlap2 <- as.numeric(intersection_area / st_area(poly2))
+		# Mitteln der beiden Überlappungen
+		mean_overlap <- (overlap1 + overlap2) / 2
+		return(list(overlap = mean_overlap, intersection = intersection))
+	}
+}
 
 # 1. Extrahieren des Start- und Endpunktes von Linestrings
 extract_points <- function(line_geom) {
@@ -58,7 +75,12 @@ calculate_angle <- function(line1, line2) {
 	return(norm_angle)
 }
 
-sf_cluster_nd_pred <- st_read(con, "cluster_test_sr_dd_large")
+char_city <- "dd"
+char_prefix_data <- "sr"
+char_data <- paste0(char_prefix_data, "_", char_city)
+buffer <- 500
+
+sf_cluster_nd_pred <- st_read(con, paste0(char_data, "_cluster"))
 st_geometry(sf_cluster_nd_pred) <- sf_cluster_nd_pred$line_geom
 cluster_ids <- 1:max(sf_cluster_nd_pred$cluster_pred)
 
@@ -98,7 +120,7 @@ for (i in 1:nrow(polygons)) {
 	# Finden der Polygone innerhalb eines Radius von 1000 Metern
 	distances <- st_distance(polygons$centroid, centroid1)
 	neighbors <- polygons %>%
-		filter(distances < units::set_units(1000, "m") & row_number() != i)
+		filter(distances < units::set_units(buffer, "m") & row_number() != i)
 	
 	if (nrow(neighbors) == 0) {
 		results[[i]] <- data.frame(
@@ -119,7 +141,8 @@ for (i in 1:nrow(polygons)) {
 		cluster_id = integer(),
 		overlap_metric = numeric(),
 		angle_metric = numeric(),
-		combined_metric = numeric()
+		combined_metric = numeric(),
+		best_intersection = st_sfc()
 	)
 	
 	# Berechnen der Metriken mit jedem Nachbarpolygon
@@ -141,7 +164,8 @@ for (i in 1:nrow(polygons)) {
 				cluster_id = as.integer(cluster_id_2),
 				overlap_metric = overlap_metric,
 				angle_metric = angle_metric,
-				combined_metric = combined_metric
+				combined_metric = combined_metric,
+				best_intersection = result$intersection
 			))
 		}
 	}
@@ -161,6 +185,8 @@ for (i in 1:nrow(polygons)) {
 		metrics <- metrics %>% arrange(desc(combined_metric))
 		top_3 <- head(metrics, 3)
 		
+		best_intersection <- top_3$best_intersection[1]
+		
 		results[[i]] <- data.frame(
 			polygon_id = i,
 			best_match_id = top_3$cluster_id[1],
@@ -173,10 +199,10 @@ for (i in 1:nrow(polygons)) {
 		)
 	}
 	
-	if (!is.null(best_intersection)) {
+	if (!is.null(best_intersection) && length(best_intersection) > 0) {
 		intersections[[i]] <- st_sf(
 			polygon_id_1 = i,
-			polygon_id_2 = ifelse(is.null(best_match), NA, best_match$cluster_id),
+			polygon_id_2 = ifelse(is.null(top_3$cluster_id[1]), NA, top_3$cluster_id[1]),
 			geometry = best_intersection
 		)
 	}
@@ -186,5 +212,4 @@ for (i in 1:nrow(polygons)) {
 results_df <- do.call(rbind, results)
 
 results_df %>%
-	filter(polygon_id == 217)
-	
+	arrange(desc(combined_metric))

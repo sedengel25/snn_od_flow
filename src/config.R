@@ -36,6 +36,7 @@ library(doParallel)
 library(geosphere)
 library(foreach)
 library(bigstatsr)
+library(tidyr)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
