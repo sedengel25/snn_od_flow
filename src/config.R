@@ -37,6 +37,13 @@ library(geosphere)
 library(foreach)
 library(bigstatsr)
 library(tidyr)
+library(prettymapr)
+library(ggspatial)
+library(leaflet)
+# library(purrr)
+# library(pointdensityP)
+# library(ggmap)
+# library(MASS)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
