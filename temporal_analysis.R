@@ -7,19 +7,28 @@ char_prefix_data <- "sr"
 char_data <- paste0(char_prefix_data, "_", char_city, "_cluster")
 sf_cluster_nd_pred <- st_read(con, char_data)
 
-sf_cluster_nd_pred$start_time <- as.POSIXct(
-	paste(
-		sf_cluster_nd_pred$start_date,
-		sf_cluster_nd_pred$start_time),
-	format =  "%d.%m.%Y %H:%M:%S", tz = "UTC")
+if(char_prefix_data == "sr"){
+	sf_cluster_nd_pred$start_time <- as.POSIXct(
+		paste(
+			sf_cluster_nd_pred$start_date,
+			sf_cluster_nd_pred$start_time),
+		format =  "%d.%m.%Y %H:%M:%S", tz = "UTC")
+	
+	sf_cluster_nd_pred$start_hour <- lubridate::hour(sf_cluster_nd_pred$start_time)
+	sf_cluster_nd_pred$weekday <- lubridate::wday(sf_cluster_nd_pred$start_time,
+																								week_start = 1)
+	sf_cluster_nd_pred$date <- as.Date(sf_cluster_nd_pred$start_time)
+} else {
 
-sf_cluster_nd_pred$start_hour <- lubridate::hour(sf_cluster_nd_pred$start_time)
-sf_cluster_nd_pred$weekday <- lubridate::wday(sf_cluster_nd_pred$start_time,
-																							week_start = 1)
-sf_cluster_nd_pred$date <- as.Date(sf_cluster_nd_pred$start_time)
+	sf_cluster_nd_pred$start_hour <- lubridate::hour(sf_cluster_nd_pred$timestamp)
+	sf_cluster_nd_pred$weekday <- lubridate::wday(sf_cluster_nd_pred$timestamp,
+																								week_start = 1)
+	sf_cluster_nd_pred$date <- as.Date(sf_cluster_nd_pred$timestamp)
+}
 
-cluster_a <- 89
-cluster_b <- 90
+
+cluster_a <- 43
+cluster_b <- 65
 sf_cluster <- sf_cluster_nd_pred %>%
 	filter(cluster_pred == cluster_a | cluster_pred == cluster_b) %>%
 	mutate(direction = case_when(
@@ -66,7 +75,7 @@ ggplot(trips_per_weekday, aes(x = factor(weekday),
 													 y = trip_count, 
 													 fill = direction)) +
 	geom_bar(stat = "identity", position = "dodge") +
-	labs(x = "Weekday Hour", 
+	labs(x = "Weekday", 
 			 y = "Number of Trips", 
 			 title = "Number of Trips by Weekday and Direction") + 
 	theme_minimal(base_size = int_base_size)
@@ -79,8 +88,11 @@ trips_per_day <- sf_cluster %>%
 	summarise(trip_count = n()) %>%
 	ungroup()
 
-trips_per_day <- trips_per_day %>%
-	filter(format(date, "%Y") == "2022")
+if(char_prefix_data == "sr"){
+	trips_per_day <- trips_per_day %>%
+		filter(format(date, "%Y") == "2022")
+	
+}
 
 
 all_days <- seq.Date(min(trips_per_day$date), max(trips_per_day$date), by = "day")

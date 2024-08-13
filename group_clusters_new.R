@@ -76,7 +76,7 @@ calculate_angle <- function(line1, line2) {
 }
 
 char_city <- "dd"
-char_prefix_data <- "sr"
+char_prefix_data <- "nb"
 char_data <- paste0(char_prefix_data, "_", char_city)
 buffer <- 500
 
@@ -234,30 +234,31 @@ results_df <- results_df %>%
 	arrange(desc(combined_metric)) %>%
 	select(-overlap_metric, -angle_metric)
 
-
-sf_rep <- st_read(con, paste0(char_data, "_rep_ls"))
-
-
-
-results_df <- results_df %>%
-	left_join(sf_rep %>% select(cluster_pred, geometry), 
-						by = c("polygon_id" = "cluster_pred")) %>%
-	rename(rep_geom = geometry)
-
-
-
-
-results_sf <- st_as_sf(results_df, sf_column_name = "rep_geom", crs = 32632)
-
-results_sf <- results_sf %>%
-	mutate(row_type = ifelse(row_number() %% 2 == 1, "odd", "even"),
-				 color = ifelse(row_type == "odd", "blue", "red"))
-
-sf_head <- head(results_sf, 20)
-sum(sf_head$count1)
-sf_head <- st_transform(sf_head, crs = 4326)
-leaflet(data = sf_head) %>% 
-	addTiles() %>% 
-	addPolylines(color = ~color, weight = 2) %>% 
-	addLegend("bottomright", colors = c("blue", "red"), 
-						labels = c("Odd", "Even"), title = "Row Type")
+results_df %>%
+	filter(polygon_id == 21)
+# sf_rep <- st_read(con, paste0(char_data, "_rep_ls"))
+# 
+# 
+# 
+# results_df <- results_df %>%
+# 	left_join(sf_rep %>% select(cluster_pred, geometry), 
+# 						by = c("polygon_id" = "cluster_pred")) %>%
+# 	rename(rep_geom = geometry)
+# 
+# 
+# 
+# 
+# results_sf <- st_as_sf(results_df, sf_column_name = "rep_geom", crs = 32632)
+# 
+# results_sf <- results_sf %>%
+# 	mutate(row_type = ifelse(row_number() %% 2 == 1, "odd", "even"),
+# 				 color = ifelse(row_type == "odd", "blue", "red"))
+# 
+# sf_head <- head(results_sf, 20)
+# sum(sf_head$count1)
+# sf_head <- st_transform(sf_head, crs = 4326)
+# leaflet(data = sf_head) %>% 
+# 	addTiles() %>% 
+# 	addPolylines(color = ~color, weight = 2) %>% 
+# 	addLegend("bottomright", colors = c("blue", "red"), 
+# 						labels = c("Odd", "Even"), title = "Row Type")

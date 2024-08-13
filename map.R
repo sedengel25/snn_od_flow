@@ -6,30 +6,33 @@ source("./main_functions.R")
 # 1. Network data
 ################################################################################
 char_city <- "dd"
+char_prefix_data <- "comb"
 dt_network <- st_read(con, paste0(char_city,
 																	"_2po_4pgr")) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
 	geom_sf(data=sf_network) 
 
-trip_file <- read_delim("./data/SR_OD_Daten_Dresden.csv") %>% as.data.frame
-head(trip_file)
-sf_origin <- st_as_sf(trip_file, coords = c("start_lon", "start_lat"), crs = 4326, remove = FALSE) %>%
+df_trips <- read_delim(paste0("./data/", char_prefix_data, "_data_dd.csv")) %>% 
+	as.data.frame
+
+summary(df_trips)
+sf_origin <- st_as_sf(df_trips, coords = c("start_lng", "start_lat"), crs = 4326, remove = FALSE) %>%
 	rename(origin_geom = geometry)
 
 # Convert end coordinates to sf object
-sf_dest <- st_as_sf(trip_file, coords = c("end_lon", "end_lat"), crs = 4326, remove = FALSE) %>%
+sf_dest <- st_as_sf(df_trips, coords = c("end_lng", "end_lat"), crs = 4326, remove = FALSE) %>%
 	rename(dest_geom = geometry)
 
 
 
 # Combine the origin and destination geometries into the original dataframe
-sf_trips <- trip_file %>%
+sf_trips <- df_trips %>%
 	bind_cols(sf_origin %>% select(origin_geom), sf_dest %>% select(dest_geom)) 
 
 sf_trips$id_new <- 1:nrow(sf_trips)
-sf_trips$start_time <- as.character(sf_trips$start_time)
-sf_trips$end_time <- as.character(sf_trips$end_time)
+# sf_trips$start_time <- as.character(sf_trips$start_time)
+# sf_trips$end_time <- as.character(sf_trips$end_time)
 
 sf_trips <- sf_trips %>%
 	mutate(origin_geom = st_transform(st_geometry(sf_trips$origin_geom), 32632),
@@ -49,12 +52,8 @@ sf_trips <- sf_trips %>%
 			st_intersects(dest_geom, sf_bbox, sparse = FALSE)
 	)
 
-plot(sf_trips$origin_geom)
-plot(sf_trips$dest_geom)
 
-char_prefix_data <- "sr"
 char_trip_data <- paste0(char_prefix_data, "_", char_city)
-
 
 st_write(sf_trips, con, char_trip_data, delete_layer = TRUE)
 
@@ -69,3 +68,4 @@ dbExecute(con, query)
 query <- paste0("UPDATE ", char_trip_data, " SET line_geom = ST_MakeLine(o_closest_point,
 			 d_closest_point);")
 dbExecute(con, query)
+
