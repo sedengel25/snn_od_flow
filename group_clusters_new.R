@@ -76,7 +76,7 @@ calculate_angle <- function(line1, line2) {
 }
 
 char_city <- "dd"
-char_prefix_data <- "nb"
+char_prefix_data <- "comb"
 char_data <- paste0(char_prefix_data, "_", char_city)
 buffer <- 500
 
@@ -234,8 +234,10 @@ results_df <- results_df %>%
 	arrange(desc(combined_metric)) %>%
 	select(-overlap_metric, -angle_metric)
 
+head(results_df,40) 
+
 results_df %>%
-	filter(polygon_id == 21)
+	arrange(desc(count1))
 # sf_rep <- st_read(con, paste0(char_data, "_rep_ls"))
 # 
 # 

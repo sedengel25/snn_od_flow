@@ -27,8 +27,8 @@ if(char_prefix_data == "sr"){
 }
 
 
-cluster_a <- 43
-cluster_b <- 65
+cluster_a <- 111
+cluster_b <- 137
 sf_cluster <- sf_cluster_nd_pred %>%
 	filter(cluster_pred == cluster_a | cluster_pred == cluster_b) %>%
 	mutate(direction = case_when(

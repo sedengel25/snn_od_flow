@@ -6,10 +6,13 @@ source("./main_functions.R")
 # 1. Network data
 ################################################################################
 char_city <- "dd"
-char_prefix_data <- "comb"
-char_data <- paste0(char_prefix_data, "_", char_city)
+char_subarea <- "könneritz"
+char_prefix_data <- "sr"
+char_data <- paste0(char_prefix_data, "_", char_city, "_", char_subarea)
 
 dt_network <- st_read(con, paste0(char_city,
+																	"_",
+																	char_subarea,
 																	"_2po_4pgr")) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 
@@ -20,7 +23,7 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[13]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[11]
 char_buffer <- strsplit(char_dt_dist_mat, "_")[[1]][2]
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -41,7 +44,7 @@ head(sf_trips)
 sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
 
-sf_trips %>%
+sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 int_kw <- c(9,10,11)
 if(char_prefix_data == "sr"){
@@ -109,9 +112,9 @@ dt_sym <- rbind(
 gc()
 dt_flow_nd <- dt_sym
 
-int_k <- 40
-int_eps <- 20
-int_minpts <- 25
+int_k <- 7
+int_eps <- 2
+int_minpts <- 2
 
 dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips,
 													 k = int_k,
@@ -120,7 +123,7 @@ dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips,
 													 dt_flow_distance = dt_flow_nd)
 
 table(dt_snn_pred_nd$cluster_pred)
-
+gc()
 
 ################################################################################
 # 4. Postprocess cluster results and write them into PSQL-DB
@@ -140,10 +143,6 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
 	theme_minimal()
 
-if(char_prefix_data == "sr"){
-	st_write(sf_cluster_nd_pred, con, paste0(char_data, "_cluster"))
-} else {
-	st_write(sf_cluster_nd_pred, con, paste0(char_data, "_cluster"))
-}
+st_write(sf_cluster_nd_pred, con, paste0(char_data, "_cluster"))
 
 

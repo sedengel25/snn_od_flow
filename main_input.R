@@ -11,7 +11,7 @@ sourceCpp("./src/helper_functions.cpp")
 ################################################################################
 list.files(path = path_bbox_coordinates, pattern = "*.poly")
 
-char_region_abb <- "dd_süd"
+char_region_abb <- "dd_könneritz"
 
 char_polygon_filename <- paste0(char_region_abb, ending_polygon)   
 
@@ -46,11 +46,11 @@ sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
 
-int_buffer <- 4000
+int_buffer <- 2000
 
 dt_dist_mat <- calc_local_node_dist_mat(buffer = int_buffer)
 
-write_rds(x = dt_dist_mat, file = paste0("./data/input/",
+write_rds(x = dt_dist_mat, file = paste0("./data/input/dt_dist_mat/",
 																				 char_region_abb,
 																				 "_",
 																				 int_buffer,

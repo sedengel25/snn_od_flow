@@ -27,7 +27,7 @@ sr_trip_file <- sr_trip_file %>%
 				 -start_date, -start_time, -end_date, -end_time) %>%
 	rename("duration_s" = "duration [s]",
 				 "distance_m" = "distance [m]")
-
+sr_trip_file <- sr_trip_file[-which(is.na(sr_trip_file$end_lng)),]
 
 sr_trip_file <- sr_trip_file %>%
 	select(trip_id, device_id, bike_number, start_lat, start_lng, 

@@ -6,22 +6,33 @@ source("./main_functions.R")
 # 1. Network data
 ################################################################################
 char_city <- "dd"
-char_prefix_data <- "comb"
+char_prefix_data <- "sr"
+char_subarea <- "könneritz"
 dt_network <- st_read(con, paste0(char_city,
+																	"_",
+																	char_subarea,
 																	"_2po_4pgr")) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
 	geom_sf(data=sf_network) 
 
-df_trips <- read_delim(paste0("./data/", char_prefix_data, "_data_dd.csv")) %>% 
-	as.data.frame
+df_trips <- read_delim(paste0("./data/", 
+															char_prefix_data, 
+															"_data_dd_pp.csv")) %>% as.data.frame
 
 summary(df_trips)
-sf_origin <- st_as_sf(df_trips, coords = c("start_lng", "start_lat"), crs = 4326, remove = FALSE) %>%
+head(df_trips)
+sf_origin <- st_as_sf(df_trips, 
+											coords = c("start_lng", "start_lat"), 
+											crs = 4326, 
+											remove = FALSE) %>%
 	rename(origin_geom = geometry)
 
 # Convert end coordinates to sf object
-sf_dest <- st_as_sf(df_trips, coords = c("end_lng", "end_lat"), crs = 4326, remove = FALSE) %>%
+sf_dest <- st_as_sf(df_trips, 
+										coords = c("end_lng", "end_lat"), 
+										crs = 4326, 
+										remove = FALSE) %>%
 	rename(dest_geom = geometry)
 
 
@@ -53,7 +64,7 @@ sf_trips <- sf_trips %>%
 	)
 
 
-char_trip_data <- paste0(char_prefix_data, "_", char_city)
+char_trip_data <- paste0(char_prefix_data, "_", char_city, "_", char_subarea)
 
 st_write(sf_trips, con, char_trip_data, delete_layer = TRUE)
 
