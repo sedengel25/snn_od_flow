@@ -5,17 +5,11 @@ source("./main_functions.R")
 ################################################################################
 # 1. Network data
 ################################################################################
-char_city <- "dd"
-char_subarea <- "könneritz"
-char_prefix_data <- "sr"
-char_data <- paste0(char_prefix_data, "_", char_city, "_", char_subarea)
-
-dt_network <- st_read(con, paste0(char_city,
-																	"_",
-																	char_subarea,
-																	"_2po_4pgr")) %>% as.data.table
+available_networks <- psql1_get_available_networks(con)
+print(available_networks)
+char_network <- available_networks[7, "table_name"]
+dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
-
 ggplot() +
 	geom_sf(data=sf_network) 
 
@@ -23,8 +17,8 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[11]
-char_buffer <- strsplit(char_dt_dist_mat, "_")[[1]][2]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[15]
+char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
 	char_dt_dist_mat))
@@ -36,35 +30,48 @@ dt_dist_mat <- dt_dist_mat %>%
 
 
 
+available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
+print(available_mapped_trip_data)
+char_data <- available_mapped_trip_data[1, "table_name"]
 sf_trips <- st_read(con, char_data) %>%
 	rename("origin_id" = "id_edge_origin",
 				 "dest_id" = "id_edge_dest")
 
+
 head(sf_trips)
+str(sf_trips)
 sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
 
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-int_kw <- c(9,10,11)
-if(char_prefix_data == "sr"){
-	sf_trips <- sf_trips %>%
-		filter(trip_distance > 2000)
-} else if(char_prefix_data == "nb"){
-	sf_trips <- sf_trips %>%
-		filter(trip_distance > 2000) %>%
-		filter(week %in% int_kw)
-} else if(char_prefix_data == "comb"){
-	sf_trips_sr <- sf_trips %>%
-		filter(source == "sr" & trip_distance > 2000) 
-	
-	sf_trips_nb <- sf_trips %>%
-		filter(source =="nb" & trip_distance > 2000 & week %in% int_kw) %>%
-		slice_head(n = nrow(sf_trips_sr))
-	
-	sf_trips <- rbind(sf_trips_sr, sf_trips_nb)
-}
 
+
+
+dist_filter <- 2000
+sf_trips <- sf_trips %>%
+	filter(trip_distance >= dist_filter)
+
+
+# int_kw <- c(10,11,12,13)
+# if(char_prefix_data == "sr"){
+# 	sf_trips <- sf_trips %>%
+# 		filter(trip_distance > 2000)
+# } else if(char_prefix_data == "nb"){
+# 	sf_trips <- sf_trips %>%
+# 		filter(trip_distance > 2000) %>%
+# 		filter(week %in% int_kw)
+# } else if(char_prefix_data == "comb"){
+# 	sf_trips_sr <- sf_trips %>%
+# 		filter(source == "sr" & trip_distance > 2000) 
+# 	
+# 	sf_trips_nb <- sf_trips %>%
+# 		filter(source =="nb" & trip_distance > 2000 & week %in% int_kw) %>%
+# 		slice_head(n = nrow(sf_trips_sr))
+# 	
+# 	sf_trips <- rbind(sf_trips_sr, sf_trips_nb)
+# }
+summary(sf_trips)
 nrow(sf_trips)
 table(sf_trips$source)
 
@@ -74,7 +81,10 @@ sf_trips$flow_id <- 1:nrow(sf_trips)
 sf_trips <- sf_trips %>% mutate(origin_id = as.integer(origin_id),
 																dest_id = as.integer(dest_id))
 
+str(sf_trips)
+summary(sf_trips)
 plot(sf_trips$line_geom)
+t_start <- proc.time()
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
@@ -112,18 +122,20 @@ dt_sym <- rbind(
 gc()
 dt_flow_nd <- dt_sym
 
-int_k <- 7
-int_eps <- 2
-int_minpts <- 2
+int_k <- 40
+int_eps <- 20
+int_minpts <- 25
 
 dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips,
 													 k = int_k,
 													 eps = int_eps,
 													 minpts = int_minpts,
 													 dt_flow_distance = dt_flow_nd)
-
+t_end<- proc.time()
+print(t_end - t_start)
 table(dt_snn_pred_nd$cluster_pred)
 gc()
+
 
 ################################################################################
 # 4. Postprocess cluster results and write them into PSQL-DB
@@ -143,6 +155,16 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
 	theme_minimal()
 
-st_write(sf_cluster_nd_pred, con, paste0(char_data, "_cluster"))
+st_write(sf_cluster_nd_pred, con, paste0(char_data, 
+																					 "_filter", 
+																					 dist_filter, 
+																					 "_parameter",
+																					 int_k,
+																					 "_",
+																					 int_eps,
+																					 "_",
+																					 int_minpts,
+																					 "_cluster"))
+
 
 

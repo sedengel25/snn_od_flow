@@ -295,3 +295,58 @@ psql1_create_visualisable_flows <- function(con, table_origin, table_dest, table
 	
 	dbExecute(con, query)
 }
+
+
+
+psql1_get_available_networks <- function(con) {
+	query <- paste0("SELECT table_schema, table_name
+  FROM information_schema.tables
+  WHERE table_name LIKE '%2po_4pgr%'
+    AND table_type = 'BASE TABLE'
+    AND table_schema NOT IN ('pg_catalog', 'information_schema');
+  ")
+	available_networks <- dbGetQuery(con, query)
+	return(available_networks)
+}
+
+psql1_get_raw_trip_data <- function(con) {
+	query <- paste0("SELECT table_schema, table_name
+  FROM information_schema.tables
+  WHERE table_name NOT LIKE '%cluster%'
+    AND table_name NOT LIKE '%2po_4pgr%'
+     AND table_name NOT LIKE '%mapped%'
+    AND table_type = 'BASE TABLE'
+    AND table_schema NOT IN ('pg_catalog', 'information_schema');
+  ")
+	
+	available_trip_data <- dbGetQuery(con, query)
+	return(available_trip_data)
+}
+
+
+psql1_get_mapped_trip_data <- function(con) {
+	query <- paste0("SELECT table_schema, table_name
+  FROM information_schema.tables
+  WHERE table_name NOT LIKE '%cluster%'
+    AND table_name NOT LIKE '%2po_4pgr%'
+     AND table_name LIKE '%mapped%'
+    AND table_type = 'BASE TABLE'
+    AND table_schema NOT IN ('pg_catalog', 'information_schema');
+  ")
+	
+	available_trip_data <- dbGetQuery(con, query)
+	return(available_trip_data)
+}
+
+
+psql1_get_cluster_tables <- function(con) {
+	query <- paste0("SELECT table_schema, table_name
+  FROM information_schema.tables
+  WHERE table_name LIKE '%cluster%'
+    AND table_type = 'BASE TABLE'
+    AND table_schema NOT IN ('pg_catalog', 'information_schema');
+  ")
+	
+	char_availabe_cluster_tables <- dbGetQuery(con, query)
+	return(char_availabe_cluster_tables)
+}
