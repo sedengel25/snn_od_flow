@@ -1,5 +1,98 @@
 source("./src/functions.R")
 
+# Documentation: main_calc_flow_nd_dist_mat
+# Usage: main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
+# Description: Creates a matrix containing the ND between OD flwos depending
+# on the given raod network and the given local node distance matrix
+# Args/Options: sf_trips, dt_network, dt_dist_mat
+# Returns: matrix
+# Output: ...
+# Action: ...
+main_calc_flow_nd_dist_mat_synth_data <- function(sf_trips, dt_network, dt_dist_mat) {
+	
+	### 1. Prepare the data ------------------------------------------------------
+	sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
+	sf_trips$dest_geom <- lwgeom::st_endpoint(sf_trips$geometry)
+	
+	dt_origin <- sf_trips %>%
+	st_set_geometry("origin_geom") %>%
+	select(flow_id, origin_id, origin_geom) %>%
+	rename("id" = "flow_id",
+				 "id_edge" = "origin_id",
+				 "geom" = "origin_geom") %>%
+	as.data.table()
+	dt_origin <- add_dist_start_end(dt_origin)
+	
+	
+	
+
+	
+	dt_dest <- sf_trips %>%
+		st_set_geometry("dest_geom") %>%
+		select(flow_id, dest_id, dest_geom) %>%
+		rename("id" = "flow_id",
+					 "id_edge" = "dest_id",
+					 "geom" = "dest_geom") %>%
+		as.data.table
+	dt_dest <- add_dist_start_end(dt_dest)
+	
+	
+	
+	dt_network <- dt_network %>%
+		select(source, target, id, geom_way)
+	
+	dt_origin <- dt_origin %>%
+		arrange(id)
+	
+	dt_dest <- dt_dest %>%
+		arrange(id)
+	
+	
+	### 2. Calc ND between OD flows ----------------------------------------------
+	# ND between origin points
+	
+	dt_o_pts_nd <- parallel_process_networks(dt_origin, 
+																					 dt_network,
+																					 dt_dist_mat,
+																					 int_cores)
+	
+	
+	#print("ND between origin points calculated")
+	# ND between dest points
+	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
+																					 dt_network,
+																					 dt_dist_mat,
+																					 int_cores)
+	
+	
+	#print("ND between dest points calculated")
+	# ND between OD flows
+	# dt_flow_nd <- dt_o_pts_nd %>%
+	# 	inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
+	# 	mutate(distance = distance.x + distance.y) %>%
+	# 	select(flow_m = from, flow_n = to, distance) %>%
+	# 	as.data.table
+	# 
+	# dt_flow_nd <- dt_flow_nd %>%
+	# 	group_by(flow_m) %>%
+	# 	mutate(row_id = row_number()) %>%
+	# 	ungroup() %>%
+	# 	as.data.table
+	return(list("dt_o_pts_nd" = dt_o_pts_nd,
+							"dt_d_pts_nd" = dt_d_pts_nd))
+	### 3. Calc OD-flow ND matrix ------------------------------------------------
+	# matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
+	# print("matrix conversion successful")
+	# sym_mat <- matrix_flow_dist
+	# sym_mat[is.na(sym_mat)] <- 0
+	# sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
+	# sym_mat[sym_mat == 0] <- NA
+	# print("symmat successful")
+	# 
+	# return(sym_mat)
+}
+
+
 
 # Documentation: main_calc_flow_nd_dist_mat
 # Usage: main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
@@ -17,7 +110,7 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 
 	
 
-	
+
 	dt_origin <- sf_trips %>%
 		st_set_geometry("o_closest_point") %>%
 		select(flow_id, origin_id, o_closest_point) %>%
@@ -25,7 +118,7 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 					 "id_edge" = "origin_id",
 					 "geom" = "o_closest_point") %>%
 		as.data.table()
-	
+	print("test")
 	# dt_origin <- sf_trips %>%
 	# 	st_set_geometry("origin_geom") %>%
 	# 	select(flow_id, origin_id, origin_geom) %>%
@@ -68,15 +161,11 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 
 	### 2. Calc ND between OD flows ----------------------------------------------
 	# ND between origin points
+
 	dt_o_pts_nd <- parallel_process_networks(dt_origin, 
 																					dt_network,
 																					dt_dist_mat,
-																					int_cores,
-																					paste0("./data/",
-																								 char_data,
-																								 "_",
-																								 char_buffer,
-																								 "_nd_origin.csv"))
+																					int_cores)
 	
 	
 	#print("ND between origin points calculated")
@@ -84,12 +173,7 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,
 																					 dt_dist_mat,
-																					 int_cores,
-																					 paste0("./data/",
-																					 			 char_data,
-																					 			 "_",
-																					 			 char_buffer,
-																					 			 "_nd_dest.csv"))
+																					 int_cores)
 	
 	
 	#print("ND between dest points calculated")

@@ -7,8 +7,9 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[7, "table_name"]
+char_network <- available_networks[6, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
+str(dt_network)
 sf_network <- st_as_sf(dt_network)
 ggplot() +
 	geom_sf(data=sf_network) 
@@ -17,7 +18,7 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[15]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[18]
 char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -32,7 +33,7 @@ dt_dist_mat <- dt_dist_mat %>%
 
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 print(available_mapped_trip_data)
-char_data <- available_mapped_trip_data[1, "table_name"]
+char_data <- available_mapped_trip_data[6, "table_name"]
 sf_trips <- st_read(con, char_data) %>%
 	rename("origin_id" = "id_edge_origin",
 				 "dest_id" = "id_edge_dest")
@@ -48,7 +49,7 @@ sf_trips <- sf_trips %>%
 
 
 
-dist_filter <- 2000
+dist_filter <- 3000
 sf_trips <- sf_trips %>%
 	filter(trip_distance >= dist_filter)
 
@@ -94,20 +95,6 @@ dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
 rm(dt_pts_nd)
 
 
-# dt_flow_nd <- dt_o_pts_nd %>%
-# 	inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
-# 	mutate(distance = distance.x + distance.y) %>%
-# 	select(flow_m = from, flow_n = to, distance) %>%
-# 	as.data.table
-# dt_flow_nd <- dt_flow_nd %>%
-# 	group_by(flow_m) %>%
-# 	mutate(row_id = row_number()) %>%
-# 	ungroup() %>%
-# 	as.data.table
-# 
-# 
-# dt_flow_nd <- dt_flow_nd[,-4]
-
 dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
 gc()
 dt_flow_nd[, distance := distance.x + distance.y]
@@ -124,7 +111,7 @@ dt_flow_nd <- dt_sym
 
 int_k <- 40
 int_eps <- 20
-int_minpts <- 25
+int_minpts <- 22
 
 dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips,
 													 k = int_k,

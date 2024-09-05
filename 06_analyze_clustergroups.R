@@ -80,7 +80,7 @@ char_data_cluster <- availabe_cluster_tables[3, "table_name"]
 
 sf_cluster_nd_pred <- st_read(con, char_data_cluster)
 
-buffer <- 200
+buffer <- 500
 
 
 sf_cluster_nd_pred <- sf_cluster_nd_pred %>%
@@ -243,6 +243,6 @@ results_df %>%
 
 
 results_df %>%
-	filter(polygon_id == 49)
+	filter(polygon_id == 241)
 
 

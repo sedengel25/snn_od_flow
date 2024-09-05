@@ -42,10 +42,8 @@ library(ggspatial)
 library(leaflet)
 library(reshape2)
 library(osmdata)
-# library(purrr)
-# library(pointdensityP)
-# library(ggmap)
-# library(MASS)
+library(sfnetworks)
+library(tidygraph)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

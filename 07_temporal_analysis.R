@@ -82,24 +82,82 @@ cluster_hourly_variance <- cluster_hourly_counts %>%
 	arrange(desc(varianz_start_hour))
 
 # Die Cluster anzeigen, die die geringste Varianz bezüglich der Startstunden haben
-print(cluster_hourly_variance, n = 20)
+print(cluster_hourly_variance, n = 30)
 
 dt_cluster_nd_pred %>%
 	filter(cluster_pred == 20) %>%
 	pull(start_hour) %>%
 	table()
 
-cluster_a <- c(47, 74, 51, 109, 115, 133)  # Beispiel-Vektor für direction_a
-cluster_b <- c(32,35,36,49,63,66,90)  # Beispiel-Vektor für direction_b
-
+cluster_a <- c(150,118,77,54,53,33,47,50,34,74,115,133,109,51)   # Beispiel-Vektor für direction_a
+cluster_b <- c(137,136,112,96,65,32,36,35,49,90,66,63,30)  # Beispiel-Vektor für direction_b
+ 
 sf_cluster <- sf_cluster_nd_pred %>%
 	filter(cluster_pred %in% cluster_a | cluster_pred %in% cluster_b) %>%
 	mutate(direction = case_when(
-		cluster_pred %in% cluster_a ~ "direction_a",
-		cluster_pred %in% cluster_b ~ "direction_b",
+		cluster_pred %in% cluster_a ~ "uk_neustadt",
+		cluster_pred %in% cluster_b ~ "neustadt_uk",
 		TRUE ~ NA_character_ 
 	))
+nrow(sf_cluster)
 
+sf_cluster %>%
+	filter(cluster_pred %in%  cluster_a) %>%
+	summary()
+
+sf_cluster %>%
+	filter(cluster_pred %in%  cluster_b) %>%
+	summary()
+# sf_cluster_b_morning <- sf_cluster_nd_pred %>%
+# 	filter(cluster_pred %in% cluster_b) %>%
+# 	filter(start_hour %in% c(6,7,8,9))
+# 
+# sf_cluster_b_morning$start_day_min <- rescale(sf_cluster_b_morning$start_hour * 60 + 
+# 	sf_cluster_b_morning$start_min)
+# 
+# sf_cluster_a_evening <- sf_cluster_nd_pred %>%
+# 	filter(cluster_pred %in% cluster_a) %>%
+# 	filter(start_hour %in% c(15,16,17))
+# 
+# sf_cluster_a_evening$end_day_min <- rescale(sf_cluster_a_evening$end_hour * 60 + 
+# 																								sf_cluster_a_evening$end_min)
+# 
+# palette <- colorNumeric(palette = "viridis", domain = sf_cluster_b_morning$start_day_min)
+# 
+# # Leaflet-Karte erstellen
+# leaflet(data = sf_cluster_b_morning) %>%
+# 	addTiles() %>%  # OSM-Basiskarte hinzufügen
+# 	addCircleMarkers(~start_lng, ~start_lat, 
+# 									 color = ~palette(start_day_min), 
+# 									 fillOpacity = 0.7,
+# 									 radius = 5,
+# 									 popup = ~paste("Startzeit: ", start_datetime, "<br>",
+# 									 							 "Start Longitude: ", start_lng, "<br>",
+# 									 							 "Start Latitude: ", start_lat, "<br>",
+# 									 							 "Start Day Min (scaled): ", round(start_day_min, 2))) %>%
+# 	addLegend("bottomright", 
+# 						pal = palette, 
+# 						values = ~start_day_min,
+# 						title = "Startzeit (Minuten, skaliert)",
+# 						opacity = 1)
+# palette <- colorNumeric(palette = "viridis", 
+# 												domain = sf_cluster_a_evening$end_day_min)
+# 
+# leaflet(data = sf_cluster_a_evening) %>%
+# 	addTiles() %>%  # OSM-Basiskarte hinzufügen
+# 	addCircleMarkers(~end_lng, ~end_lat, 
+# 									 color = ~palette(end_day_min), 
+# 									 fillOpacity = 0.7,
+# 									 radius = 5,
+# 									 popup = ~paste("Startzeit: ", end_datetime, "<br>",
+# 									 							 "Start Longitude: ", start_lng, "<br>",
+# 									 							 "Start Latitude: ", start_lat, "<br>",
+# 									 							 "Start Day Min (scaled): ", round(end_day_min, 2))) %>%
+# 	addLegend("bottomright", 
+# 						pal = palette, 
+# 						values = ~end_day_min,
+# 						title = "Endzeit (Minuten, skaliert)",
+# 						opacity = 1)
 
 int_base_size <- 20
 
@@ -114,7 +172,9 @@ trips_per_min_startmin_group <- sf_cluster %>%
 	summarise(trip_count = n()) %>%
 	ungroup() %>%
 	complete(start_min = all_minutes, direction, fill = list(trip_count = 0))
-
+trips_per_min_startmin_group$direction  <- as.factor(trips_per_min_startmin_group$direction)
+trips_per_min_startmin_group$direction <- factor(trips_per_min_startmin_group$direction, 
+																							 levels = rev(levels(trips_per_min_startmin_group$direction)))
 
 ggplot(trips_per_min_startmin_group, aes(x = start_min %% 60, y = trip_count, color = direction)) +
 	geom_point(size = 4) +
@@ -140,6 +200,9 @@ trips_per_min_endmin_group <- sf_cluster %>%
 	ungroup() %>%
 	complete(end_min = all_minutes, direction, fill = list(trip_count = 0))
 
+trips_per_min_endmin_group$direction  <- as.factor(trips_per_min_endmin_group$direction)
+trips_per_min_endmin_group$direction <- factor(trips_per_min_endmin_group$direction, 
+																	 levels = rev(levels(trips_per_min_endmin_group$direction)))
 
 ggplot(trips_per_min_endmin_group, aes(x = end_min %% 60, y = trip_count, color = direction)) +
 	geom_point(size = 4) +
@@ -187,8 +250,9 @@ trips_per_hour <- sf_cluster %>%
 	summarise(trip_count = n()) %>%
 	ungroup() %>%
 	complete(start_hour = all_hours, direction, fill = list(trip_count = 0))
-
-
+trips_per_hour$direction  <- as.factor(trips_per_hour$direction)
+trips_per_hour$direction <- factor(trips_per_hour$direction, 
+																	 levels = rev(levels(trips_per_hour$direction)))
 
 ggplot(trips_per_hour, aes(x = factor(start_hour), 
 													 y = trip_count, 

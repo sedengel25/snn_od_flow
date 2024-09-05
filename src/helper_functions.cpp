@@ -160,8 +160,7 @@ void write_results_to_file(const std::string& filename,
 DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
                                        DataFrame dt_network,
                                        DataFrame dt_dist_mat,
-                                       int num_cores,
-                                       const std::string& filename) {
+                                       int num_cores) {
 	
 	
 	

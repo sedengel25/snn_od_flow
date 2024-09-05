@@ -1,7 +1,6 @@
 source("./src/config.R")
-library(sfnetworks)
-library(osmdata)
-library(tidygraph)
+source("./main_functions.R")
+
 
 
 
@@ -405,36 +404,46 @@ create_synth_dataset <- function(n_clusters, n_noiseflows) {
 ################################################################################
 # Main
 ################################################################################
-sf_network <- st_read(con, "col_2po_4pgr")
+psql1_get_available_networks(con)
+sf_network <- st_read(con, "dd_complete_2po_4pgr")
 sf_bbox <- st_convex_hull(st_union(sf_network))
 
 
 ################################################################################
-n_clusters_vals <- seq(10,50,5)
+# n_clusters_vals <- seq(10,50,5)
+# 
+# param_grid <- data.frame()
+# 
+# for (n_clusters in n_clusters_vals) {
+# 	n_noiseflows_vals <- seq(1000,5000,250)
+# 	for (n_noiseflows in n_noiseflows_vals) {
+# 		param_grid <- rbind(param_grid, data.frame(n_clusters = n_clusters, 
+# 																							 n_noiseflows = n_noiseflows))
+# 	}
+# }
+n_clusters <- 300
+n_noiseflows <- 10000
+sf_clusters <- create_synth_dataset(n_clusters = n_clusters, 
+																		n_noiseflows = n_noiseflows)
 
-param_grid <- data.frame()
+write_rds(sf_clusters, paste0("./data/synthetic/network_distance/",
+															n_clusters,
+															"_",
+															n_noiseflows,
+															".rds"))
 
-for (n_clusters in n_clusters_vals) {
-	n_noiseflows_vals <- seq(1000,5000,250)
-	for (n_noiseflows in n_noiseflows_vals) {
-		param_grid <- rbind(param_grid, data.frame(n_clusters = n_clusters, 
-																							 n_noiseflows = n_noiseflows))
-	}
-}
-
-
-for(i in 1:nrow(param_grid)){
-	n_clusters <- param_grid[i, "n_clusters"]
-	n_noiseflows <- param_grid[i, "n_noiseflows"]
-	sf_clusters <- create_synth_dataset(n_clusters = 100, 
-																			n_noiseflows = 50000)
-	
-	write_rds(sf_clusters, paste0("./data/experiment/",
-																100,
-																"_",
-																50000,
-																".rds"))
-}
+# for(i in 1:nrow(param_grid)){
+# 	n_clusters <- param_grid[i, "n_clusters"]
+# 	n_noiseflows <- param_grid[i, "n_noiseflows"]
+# 	sf_clusters <- create_synth_dataset(n_clusters = 100, 
+# 																			n_noiseflows = 50000)
+# 	
+# 	write_rds(sf_clusters, paste0("./data/experiment/",
+# 																100,
+# 																"_",
+# 																50000,
+# 																".rds"))
+# }
 
 
 

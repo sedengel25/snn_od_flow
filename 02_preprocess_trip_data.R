@@ -112,7 +112,7 @@ nb_trip_file <- read_delim(paste0("./data/", char_prefix_data, "_data_dd.csv")) 
 str(nb_trip_file)
 
 # write_csv(nb_trip_file, "./data/nb_data_dd_pp.csv")
-# st_write(nb_trip_file, con, "nb_dd_complete")
+st_write(nb_trip_file, con, "nb_dd_complete")
 # Reorder nb_trip_file columns to match sr_trip_file
 nb_trip_file <- nb_trip_file %>%
 	select(trip_id, device_id, bike_number, start_lat, start_lng, 
