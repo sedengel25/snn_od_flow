@@ -63,7 +63,7 @@ psql1_update_srid <- function(con, table, crs) {
 # Returns: ...
 # Output: ...
 # Action: Execute psql-query
-psql1_transform_coordinates <- function(con, table) {
+psql1_transform_coordinates <- function(con, table, crs) {
 	
 	name_geom_col <- psql2_get_name_of_geom_col(con, table)
 	type_geom_col <- psql2_get_geometry_type(con, table)
@@ -74,11 +74,11 @@ psql1_transform_coordinates <- function(con, table) {
 									" TYPE geometry(",
 									type_geom_col,
 									", ",
-									32632, 
+									crs, 
 									") USING ST_Transform(",
 									name_geom_col,
 									",",
-									32632, ");")
+									crs, ");")
 	dbExecute(con, query)
 }
 
@@ -140,11 +140,11 @@ psql1_create_index <- function(con, table, col) {
 # Returns: ...
 # Output: ...
 # Action: psql-query
-psql1_map_od_points_onto_network <- function(con, table_network, table_trips) {
+psql1_map_od_points_onto_network <- function(con, table_network, table_trips, crs) {
 	# Hinzufügen der notwendigen Spalten
 	query <- paste0("ALTER TABLE ", table_trips, "
-    ADD COLUMN IF NOT EXISTS o_closest_point geometry(Point, 32632),
-    ADD COLUMN IF NOT EXISTS d_closest_point geometry(Point, 32632),
+    ADD COLUMN IF NOT EXISTS o_closest_point geometry(Point, ", crs, "),
+    ADD COLUMN IF NOT EXISTS d_closest_point geometry(Point, ", crs, "),
     ADD COLUMN IF NOT EXISTS o_dist_to_start double precision,
     ADD COLUMN IF NOT EXISTS o_dist_to_end double precision,
     ADD COLUMN IF NOT EXISTS d_dist_to_start double precision,

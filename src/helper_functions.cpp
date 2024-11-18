@@ -196,8 +196,9 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
 
 	
 	// Initialisieren des Workers
-	NetworkProcessor worker(od_pts_full_id, od_pts_full_line_id, od_pts_full_start, od_pts_full_end,
-                         network_map, dist_map, from_points, to_points, distances, mtx);
+	NetworkProcessor worker(od_pts_full_id, od_pts_full_line_id, od_pts_full_start, 
+                         od_pts_full_end, network_map, dist_map, from_points, 
+                         to_points, distances, mtx);
 	
 	// Parallele Verarbeitung der Blöcke
 	auto start2 = std::chrono::system_clock::now();
@@ -221,9 +222,9 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
 
 // [[Rcpp::export]]
 Rcpp::DataFrame cpp_find_knn(Rcpp::DataFrame df, int k, IntegerVector flow_ids) {
-	Rcpp::IntegerVector all_flows = df["flow_m"];
-	Rcpp::IntegerVector flow_m = df["flow_m"];
-	Rcpp::IntegerVector flow_n = df["flow_n"];
+	Rcpp::IntegerVector all_flows = df["from"];
+	Rcpp::IntegerVector flow_m = df["from"];
+	Rcpp::IntegerVector flow_n = df["to"];
 	Rcpp::IntegerVector distance = df["distance"];
 	
 	// Create a map to hold the nearest neighbors for each flow_m
@@ -239,11 +240,13 @@ Rcpp::DataFrame cpp_find_knn(Rcpp::DataFrame df, int k, IntegerVector flow_ids) 
 	
 	// Create a set to hold unique flow_m values
 	std::set<int> unique_flow_m_set(flow_ids.begin(), flow_ids.end());
-	std::vector<int> unique_flow_m(unique_flow_m_set.begin(), unique_flow_m_set.end());
+	std::vector<int> unique_flow_m(unique_flow_m_set.begin(), 
+                                unique_flow_m_set.end());
 	
 	// Create vectors for the results
 	std::vector<int> result_flow_m;
-	std::vector<std::vector<int>> result_nns(unique_flow_m.size(), std::vector<int>(k, NA_INTEGER));
+	std::vector<std::vector<int>> result_nns(unique_flow_m.size(), 
+                                          std::vector<int>(k, NA_INTEGER));
 	
 	// Find the k nearest neighbors for each flow_m
 	for (size_t i = 0; i < unique_flow_m.size(); ++i) {
@@ -281,6 +284,9 @@ Rcpp::DataFrame cpp_find_knn(Rcpp::DataFrame df, int k, IntegerVector flow_ids) 
 	
 	return Rcpp::DataFrame(result);
 }
+
+
+
 
 
 // [[Rcpp::export]]

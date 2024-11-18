@@ -44,6 +44,7 @@ library(reshape2)
 library(osmdata)
 library(sfnetworks)
 library(tidygraph)
+library(purrr)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -123,6 +124,12 @@ path_input_data <- "data/input"
 ################################################################################
 file_ger_osm_pbf <- here::here(path_osm_pbf, 
 															 "germany-latest.osm.pbf")  
+
+file_ch_osm_pbf <- here::here(path_osm_pbf, 
+															 "china-latest.osm.pbf")  
+
+file_beijing_osm_pbf <- here::here(path_osm_pbf, 
+															 "beijing-latest.osm.pbf")  
 
 file_osm2po_jar <- here::here(external_path_osm2po,
 															"osm2po-core-5.5.5-signed.jar")

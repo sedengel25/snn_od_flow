@@ -14,13 +14,13 @@ source("./src/utils/r_2.R")
 # Returns: ...
 # Output: ...
 # Action: Executes a 'osmconvert' command
-osmconvert_create_sub_osm_pbf <- function() {
+osmconvert_create_sub_osm_pbf <- function(file_pbf) {
 
 	
 	
 	char_cmd_osmconvert <- paste(
 		"osmconvert", 
-		shQuote(file_ger_osm_pbf),
+		shQuote(file_pbf),
 		paste("-B=", shQuote(char_polygon_file), sep=""), 
 		paste("-o=", shQuote(char_pbf_file), sep="")
 	)
@@ -44,7 +44,7 @@ osmconvert_create_sub_osm_pbf <- function() {
 # Returns: ...
 # Output: ...
 # Action: Executing several cmd- and psql-queries
-osm2po_create_routable_network <- function() {
+osm2po_create_routable_network <- function(int_crs) {
 	
 	# Prepare system command for executing the sh-file
 	char_cmd_osm2po <- paste(
@@ -106,9 +106,10 @@ osm2po_create_routable_network <- function() {
 	
 	# Transform coordinate system
 	srid <- psql1_get_srid(con, table = char_network)
+	cat("SRID: ", srid, "\n")
 	psql1_set_srid(con, table = char_network, srid)
-	psql1_transform_coordinates(con, table = char_network)
-	psql1_update_srid(con, table = char_network, crs = 32632)
+	psql1_transform_coordinates(con, table = char_network, crs = int_crs)
+	psql1_update_srid(con, table = char_network, crs = int_crs)
 	psql1_create_spatial_index(con, table = char_network)
 }
 

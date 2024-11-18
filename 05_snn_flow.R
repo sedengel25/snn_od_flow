@@ -7,9 +7,8 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[6, "table_name"]
+char_network <- available_networks[12, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
-str(dt_network)
 sf_network <- st_as_sf(dt_network)
 ggplot() +
 	geom_sf(data=sf_network) 
@@ -18,7 +17,7 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[18]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[15]
 char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -39,29 +38,22 @@ sf_trips <- st_read(con, char_data) %>%
 				 "dest_id" = "id_edge_dest")
 
 
-head(sf_trips)
-str(sf_trips)
 sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
-
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-
-
-
-dist_filter <- 3000
+dist_filter <- 1
 sf_trips <- sf_trips %>%
 	filter(trip_distance >= dist_filter)
 
 
-# int_kw <- c(10,11,12,13)
+int_kw <- c(13)
 # if(char_prefix_data == "sr"){
 # 	sf_trips <- sf_trips %>%
 # 		filter(trip_distance > 2000)
 # } else if(char_prefix_data == "nb"){
-# 	sf_trips <- sf_trips %>%
-# 		filter(trip_distance > 2000) %>%
-# 		filter(week %in% int_kw)
+sf_trips <- sf_trips %>%
+	filter(week %in% int_kw)
 # } else if(char_prefix_data == "comb"){
 # 	sf_trips_sr <- sf_trips %>%
 # 		filter(source == "sr" & trip_distance > 2000) 
@@ -72,9 +64,7 @@ sf_trips <- sf_trips %>%
 # 	
 # 	sf_trips <- rbind(sf_trips_sr, sf_trips_nb)
 # }
-summary(sf_trips)
-nrow(sf_trips)
-table(sf_trips$source)
+
 
 
 sf_trips$flow_id <- 1:nrow(sf_trips)
@@ -82,9 +72,10 @@ sf_trips$flow_id <- 1:nrow(sf_trips)
 sf_trips <- sf_trips %>% mutate(origin_id = as.integer(origin_id),
 																dest_id = as.integer(dest_id))
 
-str(sf_trips)
-summary(sf_trips)
-plot(sf_trips$line_geom)
+
+
+
+
 t_start <- proc.time()
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
@@ -92,6 +83,10 @@ t_start <- proc.time()
 dt_pts_nd <- main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
 dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
 dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
+
+
+
+
 rm(dt_pts_nd)
 
 
@@ -108,6 +103,9 @@ dt_sym <- rbind(
 
 gc()
 dt_flow_nd <- dt_sym
+# dt_flow_nd <- dt_flow_nd %>%
+# 	rename(from = flow_m,
+# 				 to = flow_n)
 
 int_k <- 40
 int_eps <- 20
