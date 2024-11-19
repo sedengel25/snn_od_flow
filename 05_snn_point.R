@@ -44,7 +44,7 @@ sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 
 
-dist_filter <- 500
+dist_filter <- 5000
 int_kw <- c(13)
 sf_trips <- sf_trips %>%
 	filter(week %in% int_kw,

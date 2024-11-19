@@ -455,11 +455,8 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 # Output: ...
 # Action: ...
 snn_flow <- function(ids, k, eps, minpts, dt_flow_distance) {
-	all_flow_ids <- ids
-	matrix_knn <- cpp_find_knn(df = dt_flow_distance, k = k, all_flow_ids) %>% 
+	matrix_knn <- cpp_find_knn(df = dt_flow_distance, k = k, ids) %>% 
 		as.matrix
-	
-	
 	### 1. Calculate SNN Density -------------------------------------------------
 	p1 <- proc.time()
 	list_df <- cpp_calc_density_n_get_dr_df(dt_knn = matrix_knn,
@@ -579,6 +576,163 @@ snn_flow <- function(ids, k, eps, minpts, dt_flow_distance) {
 	})
 	
 
+	dt_cluster_flows <- cbind(unlist(list_length_clusters), 
+														unlist(list_cluster_final)) %>% 
+		as.data.table %>%
+		rename("cluster_pred" = "V1",
+					 "id" = "V2") %>%
+		select(id, cluster_pred)
+	
+	
+	dt_noise_flows <- dt_cluster[which(!dt_cluster$flow 
+																		 %in% dt_cluster_flows$id),"flow"] %>%
+		rename(id = flow)
+	
+	
+	dt_noise_flows$cluster_pred <- 0 
+	
+	dt_cluster_final <- rbind(dt_cluster_flows, dt_noise_flows)
+	
+	dt_cluster_final <- dt_cluster_final %>%
+		arrange(id)
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("Assign non-core flows: ", time_diff[[3]], " seconds.\n")
+	return(dt_cluster_final)
+}
+
+
+# Documentation: snn_flow
+# Usage: snn_flow(flow_dist_mat, k, eps, minpts)
+# Description: Executes the SNN_flow algorithm (Liu et al. (2022))
+# Args/Options: flow_dist_mat, k, eps, minpts
+# Returns: datatable
+# Output: ...
+# Action: ...
+snn_polygon <- function(ids, k, eps, minpts, dt_flow_distance) {
+	matrix_knn <- cpp_find_knn_polygons(df = dt_flow_distance, k = k, ids) %>% 
+		as.matrix
+
+	### 1. Calculate SNN Density -------------------------------------------------
+	p1 <- proc.time()
+	list_df <- cpp_calc_density_n_get_dr_df(dt_knn = matrix_knn,
+																					eps = eps,
+																					int_k = k)
+	
+	dt_snn_density <- list_df$snn_density %>% as.data.table()
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("dt_snn_density: ", time_diff[[3]], " seconds.\n")
+	
+	
+	### 2. Assign clusters using density connectivity mechanism ------------------
+	p1 <- proc.time()
+	
+	dt_dr_flows <- list_df$dr_flows %>% as.data.table
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("dt_dr_flows: ", time_diff[[3]], " seconds.\n")
+	
+	# Flows with a SNNDensity higher than the threshold are 'core-flows'
+	dt_snn_density <- dt_snn_density %>%
+		mutate(core_flow = case_when(shared_density >= minpts ~ "yes",
+																 TRUE ~ "no"))
+	
+	setorder(dt_snn_density, flow)
+	
+	# If no core-flows are found, all flows are noise
+	if(length(which(dt_snn_density$core_flow == "yes")) == 0){
+		dt_cluster_final <- dt_snn_density %>%
+			mutate(cluster_pred = 0) %>%
+			select(flow, cluster_pred)
+		return(dt_cluster_final)
+	}
+	
+	p1 <- proc.time()
+	
+	# Get all core flows
+	total_core_flows <- dt_snn_density %>%
+		filter(core_flow == "yes") %>%
+		select(flow) %>%
+		pull %>%
+		as.integer
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("total_core_flows: ", time_diff[[3]], " seconds.\n")
+	
+	p1 <- proc.time()
+	
+	# Get all flows directly reachable from the core flows
+	flows_reachable_from_core_flow <- dt_dr_flows %>%
+		left_join(dt_snn_density, by = c("from" = "flow")) %>%
+		filter(core_flow == "yes") %>%
+		select(to) %>%
+		pull %>%
+		as.integer %>%
+		unique
+	
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("flows_reachable_from_core_flow: ", time_diff[[3]], " seconds.\n")
+	
+	p1 <- proc.time()
+	
+	# Create a table with all directly reachable core-flow pairs...
+	dt_dr_flows_cf <- dt_dr_flows[from %in% total_core_flows & 
+																	to %in% total_core_flows]
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("dt_dr_flows_cf: ", time_diff[[3]], " seconds.\n")
+	
+	p1 <- proc.time()
+	# ...create a graph from that dataframe... 
+	graph <- graph_from_data_frame(dt_dr_flows_cf, directed = FALSE)
+	
+	#...and get all the components...
+	components <- components(graph)
+	
+	#...which equals the number of clusters according to the density connectivity mechanism.
+	dt_cluster_coreflows <- data.table(flow = names(components$membership) %>% as.integer, 
+																		 cluster_pred = components$membership)
+	
+	# Get all the flows that are not yet a part of a cluster...
+	dt_cluster_0 <- dt_snn_density[which(!dt_snn_density$flow 
+																			 %in% dt_cluster_coreflows$flow), "flow"]
+	
+	#...assign them cluster 0...
+	dt_cluster_0$cluster_pred <- 0
+	
+	
+	#...and combine them into a dataframe with the coreflows having a cluster.
+	dt_cluster <- rbind(dt_cluster_coreflows, dt_cluster_0) %>%
+		arrange(flow)
+	
+	p2 <- proc.time()
+	time_diff <- p2-p1
+	cat("Get coreflows: ", time_diff[[3]], " seconds.\n")
+	
+	#return(dt_cluster)
+	p1 <- proc.time()
+	# Now assign all the non-core flows
+	list_cluster_final <- cpp_assign_clusters(dt_cluster = dt_cluster,
+																						dt_knn_r = matrix_knn,
+																						flows_reachable_from_core_flow = flows_reachable_from_core_flow,
+																						int_k = k)
+	
+	
+	list_length_clusters <- lapply(names(list_cluster_final), function(x){
+		idx <- as.integer(x)
+		n <- length(list_cluster_final[[idx]])
+		rep(idx,n)
+	})
+	
+	
 	dt_cluster_flows <- cbind(unlist(list_length_clusters), 
 														unlist(list_cluster_final)) %>% 
 		as.data.table %>%

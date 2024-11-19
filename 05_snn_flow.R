@@ -42,12 +42,12 @@ sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 1
+dist_filter <- 2000
 sf_trips <- sf_trips %>%
 	filter(trip_distance >= dist_filter)
 
 
-int_kw <- c(13)
+int_kw <- c(11,12,13)
 # if(char_prefix_data == "sr"){
 # 	sf_trips <- sf_trips %>%
 # 		filter(trip_distance > 2000)
@@ -103,15 +103,15 @@ dt_sym <- rbind(
 
 gc()
 dt_flow_nd <- dt_sym
-# dt_flow_nd <- dt_flow_nd %>%
-# 	rename(from = flow_m,
-# 				 to = flow_n)
+dt_flow_nd <- dt_flow_nd %>%
+	rename(from = flow_m,
+				 to = flow_n)
 
-int_k <- 40
-int_eps <- 20
-int_minpts <- 22
+int_k <- 20
+int_eps <- 10
+int_minpts <- 12
 
-dt_snn_pred_nd <- snn_flow(sf_trips = sf_trips,
+dt_snn_pred_nd <- snn_flow(ids = sf_trips$flow_id,
 													 k = int_k,
 													 eps = int_eps,
 													 minpts = int_minpts,
@@ -126,7 +126,7 @@ gc()
 # 4. Postprocess cluster results and write them into PSQL-DB
 ################################################################################
 sf_cluster_nd_pred <- sf_trips %>%
-	left_join(dt_snn_pred_nd, by = c("flow_id" = "flow"))
+	left_join(dt_snn_pred_nd, by = c("flow_id" = "id"))
 st_drop_geometry(sf_cluster_nd_pred)
 st_geometry(sf_cluster_nd_pred) <- "line_geom"
 sf_cluster_nd_pred <- sf_cluster_nd_pred %>%
