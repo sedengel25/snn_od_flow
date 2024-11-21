@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[12, "table_name"]
+char_network <- available_networks[1, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
@@ -16,9 +16,9 @@ ggplot() +
 
 available_raw_trip_data <- psql1_get_raw_trip_data(con)
 print(available_raw_trip_data)
-char_data <- available_raw_trip_data[13, "table_name"]
-df_trips <- st_read(con, char_data)
-sf_trips <- df_trips
+char_data <- available_raw_trip_data[2, "table_name"]
+df_trips <- st_read(con, char_data) 
+sf_trips <- df_trips 
 
 sf_origin <- st_as_sf(df_trips, 
 											coords = c("start_lng", "start_lat"), 
@@ -75,7 +75,7 @@ if(char_area != "complete"){
 	char_data <- paste0(char_data, "_mapped")
 }
 
-print(char_data)
+#char_data <- "nb_dd_mapped"
 st_write(sf_trips, con, char_data, delete_layer = TRUE)
 
 

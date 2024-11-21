@@ -45,6 +45,7 @@ library(osmdata)
 library(sfnetworks)
 library(tidygraph)
 library(purrr)
+library(concaveman)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

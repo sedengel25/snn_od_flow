@@ -219,6 +219,50 @@ psql1_map_od_points_onto_network <- function(con, table_network, table_trips, cr
 }
 
 
+# Documentation: psql1_map_od_pts_to_network
+# Usage: psql1_map_od_pts_to_network(con, table_network)
+# Description: Maps OD points onto network using PostGIS-functions
+# Args/Options: con, table_network
+# Returns: ...
+# Output: ...
+# Action: psql-query
+psql1_map_points_onto_network <- function(con, table_network, table_trips, crs) {
+	# Hinzufügen der notwendigen Spalten
+	query <- paste0("ALTER TABLE ", table_trips, "
+    ADD COLUMN IF NOT EXISTS closest_point geometry(Point, ", crs, "),
+    ADD COLUMN IF NOT EXISTS dist_to_start double precision,
+    ADD COLUMN IF NOT EXISTS dist_to_end double precision,
+    ADD COLUMN IF NOT EXISTS id_edge bigint;")
+	dbExecute(con, query)
+	
+	query <- paste0("
+    UPDATE ", table_trips, " mp
+    SET 
+      closest_point = sub.closest_point,
+      dist_to_start = sub.dist_to_start,
+      dist_to_end = sub.dist_to_end,
+      id_edge = sub.id_edge
+    FROM (
+      SELECT
+        p.id,
+        n.id AS id_edge,
+        ST_ClosestPoint(n.geom_way, p.points) AS closest_point,
+        ST_Distance(ST_ClosestPoint(n.geom_way, p.points), ST_StartPoint(n.geom_way)) AS dist_to_start,
+        ST_Distance(ST_ClosestPoint(n.geom_way, p.points), ST_EndPoint(n.geom_way)) AS dist_to_end
+      FROM
+        ", table_trips, " p
+      CROSS JOIN LATERAL
+        (SELECT id, geom_way
+         FROM ", table_network, "
+         ORDER BY geom_way <-> p.points
+         LIMIT 1
+        ) AS n
+    ) sub
+    WHERE mp.id = sub.id;")
+	cat(query)
+	dbExecute(con, query)
+	
+}
 
 
 
@@ -327,8 +371,7 @@ psql1_get_raw_trip_data <- function(con) {
 psql1_get_mapped_trip_data <- function(con) {
 	query <- paste0("SELECT table_schema, table_name
   FROM information_schema.tables
-  WHERE table_name NOT LIKE '%cluster%'
-    AND table_name NOT LIKE '%2po_4pgr%'
+  WHERE table_name NOT LIKE '%2po_4pgr%'
      AND table_name LIKE '%mapped%'
     AND table_type = 'BASE TABLE'
     AND table_schema NOT IN ('pg_catalog', 'information_schema');
@@ -349,4 +392,39 @@ psql1_get_cluster_tables <- function(con) {
 	
 	char_availabe_cluster_tables <- dbGetQuery(con, query)
 	return(char_availabe_cluster_tables)
+}
+
+
+
+psql1_calc_overlay_distance <- function(con, char_sf_pol){
+	query <- paste0("WITH pairs AS (
+	  SELECT 
+	    a.id AS i,
+	    b.id AS j,
+	    CASE 
+	      WHEN ST_Intersects(a.pol, b.pol) THEN ST_Intersection(a.pol, b.pol)
+	      ELSE NULL
+	    END AS intersection_geom,
+	    ST_Union(a.pol, b.pol) AS union_geom
+	  FROM ", char_sf_pol, " a, ", char_sf_pol, " b
+	),
+	areas AS (
+	  SELECT 
+	    i, 
+	    j,
+	    COALESCE(ST_Area(intersection_geom), 0) AS intersection_area,
+	    COALESCE(ST_Area(union_geom), 0) AS union_area
+	  FROM pairs
+	)
+	SELECT 
+	  i,
+	  j,
+	  CASE 
+	    WHEN intersection_area = 0 THEN 1 -- Kein Überlappungsbereich
+	    WHEN union_area > 0 THEN 1 - (intersection_area / union_area)
+	    ELSE NULL
+	  END AS overlay
+	FROM areas;
+	")
+	return(dbGetQuery(con, query))
 }

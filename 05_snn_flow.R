@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[12, "table_name"]
+char_network <- available_networks[1, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
@@ -17,7 +17,7 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[15]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[13]
 char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -32,7 +32,7 @@ dt_dist_mat <- dt_dist_mat %>%
 
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 print(available_mapped_trip_data)
-char_data <- available_mapped_trip_data[6, "table_name"]
+char_data <- available_mapped_trip_data[1, "table_name"]
 sf_trips <- st_read(con, char_data) %>%
 	rename("origin_id" = "id_edge_origin",
 				 "dest_id" = "id_edge_dest")
@@ -141,9 +141,9 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	theme_minimal()
 
 st_write(sf_cluster_nd_pred, con, paste0(char_data, 
-																					 "_filter", 
+																					 "_f", 
 																					 dist_filter, 
-																					 "_parameter",
+																					 "_p",
 																					 int_k,
 																					 "_",
 																					 int_eps,

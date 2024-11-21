@@ -372,3 +372,38 @@ add_dist_start_end <- function(dt_points) {
 	
 	return(dt_points)
 }
+
+
+# Documentation: clean_point_clusters_lof
+# Usage: clean_point_clusters_lof(sf_cluster)
+# Description: Outlier removing from clusters based on LOF
+# Args/Options: sf_cluster
+# Returns: sf-dataframe
+# Output: ...
+# Action: ...
+clean_point_clusters_lof <- function(sf_cluster) {
+	total_clusters <- 1:max(sf_cluster$cluster_pred)
+	
+	list_cleaned_clusters <- list()
+	for (cluster_id in total_clusters) {
+		cluster_points <- sf_cluster %>% 
+			filter(cluster_pred == cluster_id)
+		coords <- st_coordinates(cluster_points)
+		
+		k <- ceiling(0.75*nrow(coords))
+		lof_scores <- lof(coords, minPts = k)
+		
+		cluster_points$lof <- lof_scores
+		
+		cluster_points <- cluster_points %>% 
+			filter(lof < 2)
+		
+		list_cleaned_clusters[[cluster_id]] <- cluster_points
+	}
+	
+	sf_cluster <- rbindlist(list_cleaned_clusters) %>%
+		as.data.frame() %>%
+		st_as_sf()
+	return(sf_cluster)
+}
+
