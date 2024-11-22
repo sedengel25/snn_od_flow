@@ -114,7 +114,23 @@ osm2po_create_routable_network <- function(int_crs) {
 }
 
 
-
+instantiate_py <- function() {
+  reticulate::py_install("networkx", 
+  											 envname = "r-reticulate", 
+  											 method = "virtualenv",
+  											 pip = TRUE)
+  
+  reticulate::py_install("numpy==1.26.00", 
+  											 envname = "r-reticulate", 
+  											 method = "virtualenv",
+  											 pip = TRUE)
+  reticulate::use_virtualenv("r-reticulate", required = TRUE)
+  nx <<- reticulate::import("networkx")
+  np <<- reticulate::import("numpy")
+  
+  config <<- py_config()
+  config$numpy
+}
 
 
 
@@ -146,21 +162,7 @@ calc_local_node_dist_mat <- function(buffer) {
 	#reticulate::install_python()
 	#reticulate::install_miniconda()
 	# Initiate the environment
-	reticulate::py_install("networkx", 
-												 envname = "r-reticulate", 
-												 method = "virtualenv",
-												 pip = TRUE)
-
-	reticulate::py_install("numpy==1.26.00", 
-												 envname = "r-reticulate", 
-												 method = "virtualenv",
-												 pip = TRUE)
-	reticulate::use_virtualenv("r-reticulate", required = TRUE)
-	nx <- reticulate::import("networkx")
-	np <- reticulate::import("numpy")
-	
-	config <- py_config()
-	config$numpy
+	instantiate_py()
 	# Create a graph from the sub street network
 	g <- nx$from_pandas_edgelist(df = sf_network,
 															 source = "source",
