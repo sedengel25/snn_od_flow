@@ -268,9 +268,12 @@ st_write(sf_cluster, con, char_data_2_lines)
 ################################################################################
 # Find outer points
 ################################################################################
+sf_points_clustered <- sf_cluster_pred_points
+
 r1_get_outer_points_per_cluster <- function(sf_points_clustered, sf_lines) {
 	
-	cluster_ids <- 1:max(sf_cluster_pred_points$cluster_pred)
+	cluster_ids <- 1:max(sf_points_clustered$cluster_pred)
+	
 	list_of_outer_points <- lapply(cluster_ids, function(i){
 		points <- sf_points_clustered %>%
 			filter(cluster_pred == i)
@@ -297,6 +300,7 @@ r1_get_outer_points_per_cluster <- function(sf_points_clustered, sf_lines) {
 				unattached_at_target = !(target %in% lines$source | 
 																 	target %in% lines$target[-match(target, lines$target)])
 			)
+		
 		outer_points <- points[which(points$id_edge %in% outer_edges$id),] %>%
 			as.data.table()
 		outer_points <- outer_points %>%
