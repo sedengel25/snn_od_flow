@@ -81,7 +81,8 @@ sf_points <- sf_points %>%
 # char_network <- available_networks[1, "table_name"]
 dt_network <- st_read(con, char_network) %>%
 	as.data.table()
-sf_network <- st_as_sf(dt_network)
+sf_network <- st_as_sf(dt_network) %>%
+	mutate(m = 1000*km)
 ggplot() +
 	geom_sf(data=sf_network)
 
@@ -172,18 +173,22 @@ dt_network <- st_read(con, char_network) %>%
 setkey(dt_network, id)
 
 
-r1_get_edge_ids_from_sp <- function(unconnected_source_nodes,
-																		connected_source_nodes																		) {
-	edges <- lapply(unconnected_source_nodes, function(unconnected_node) {
+r1_get_edge_ids_from_sp <- function(total_source_nodes, int_cl) {
+	list_all_cluster_edges <- list()
+	i <- 1
+	for(node_i in total_source_nodes){
 		#print("--------------------------------------------")
 		#cat("source: ", unconnected_node, "\n")
-		sapply(connected_source_nodes, function(connected_node) {
+		for(node_j in total_source_nodes){
 			#cat("target: ", connected_node, "\n")
+			if(node_i == node_j){
+				next
+			}
 			sp <- nx$shortest_path(g,
-														 source = unconnected_node,
-														 target = connected_node, 
+														 source = node_i,
+														 target = node_j, 
 														 weight = "m")
-			
+			#print(sp)
 			
 			pairs <- as.matrix(embed(sp, 2)[, 2:1])
 			edge_ids <- apply(pairs, 1, function(row) {
@@ -193,10 +198,15 @@ r1_get_edge_ids_from_sp <- function(unconnected_source_nodes,
 				return(edge_id)
 			})
 			#cat("edge_ids: ", edge_ids, "\n")
-			edge_ids
-		})
-	})
+			#### HIER M*SSEN ALLE EDGE_IDS PRO CLUSTER GESPEICHERT UND DANN NDANACH ZUSAMMENGEFÜGT WERDen1!!!!!
+			list_all_cluster_edges[[i]] <- edge_ids
+			i <- i + 1
+		}
+	}
+	#print(list_all_cluster_edges)
+	return(list_all_cluster_edges)
 }
+
 instantiate_py()
 g <- nx$from_pandas_edgelist(df = sf_network,
 														 source = "source",
@@ -205,9 +215,11 @@ g <- nx$from_pandas_edgelist(df = sf_network,
 
 
 int_cl <- 1
+list_missing_edges <- list()
 missing_edges <- lapply(list_cluster_edges, function(edges){
 	#print("--------------------------------------------")
 	cat("Cluster: ", int_cl, "\n")
+	#edges <- list_cluster_edges[[3]]
 	x <- dt_network[id %in% edges, .(id, source, target)]
 	node_counts <- data.table(node = c(x$source, 
 																		 x$target))[, .N, by = node]
@@ -215,22 +227,22 @@ missing_edges <- lapply(list_cluster_edges, function(edges){
 	unconnected_edges <- x[source %in% single_nodes & target %in% single_nodes]
 	unconnected_source_nodes <- unconnected_edges$source
 	connected_source_nodes <- x$source[!(x$source %in% unconnected_source_nodes)]
-	# print(x)
+	total_source_nodes <- c(unconnected_source_nodes, 
+													connected_source_nodes)
 	# cat("connected_source_nodes: ", connected_source_nodes, "\n")
 	# cat("unconnected_source_nodes: ", unconnected_source_nodes, "\n")
-	missing_edges <- r1_get_edge_ids_from_sp(unconnected_source_nodes,
-																					 connected_source_nodes) %>% 
+	missing_edges <- r1_get_edge_ids_from_sp(total_source_nodes, int_cl) %>% 
 		unlist() %>% 
 		unique()
 	#cat("missing edges for cluster ", int_cl, ": ", missing_edges, "\n")
+	list_missing_edges[[int_cl]] <<- missing_edges
 	int_cl <<- int_cl + 1
 	missing_edges
 })
 
+missing_edges <- list_missing_edges
 
 contained_edges <- lapply(list_cluster_edges, function(edges){
-	#print("--------------------------------------------")
-	cat("Cluster: ", int_cl, "\n")
 	x <- dt_network[id %in% edges, .(id, source, target)]
 	x$id
 })
@@ -242,6 +254,8 @@ contained_edges <- lapply(list_cluster_edges, function(edges){
 
 full_edges <- mapply(function(x, y) 
 	unique(c(x, y)), contained_edges, missing_edges, SIMPLIFY = FALSE)
+
+
 
 sf_cluster <- bind_rows(
 	lapply(seq_along(full_edges), function(cluster_id) {
@@ -260,23 +274,25 @@ sf_cluster <- bind_rows(
 char_data_2_lines <- paste0(
 	char_data_cluster, 
 	"_p2_", 
-	int_k, "_", 
-	int_eps, "_", 
-	int_minpts, "_road_segments")
+	40, "_", 
+	20, "_", 
+	22, "_road_segments")
 
 st_write(sf_cluster, con, char_data_2_lines)
 ################################################################################
 # Find outer points
 ################################################################################
 sf_points_clustered <- sf_cluster_pred_points
-
+sf_lines <- sf_cluster
 r1_get_outer_points_per_cluster <- function(sf_points_clustered, sf_lines) {
 	
 	cluster_ids <- 1:max(sf_points_clustered$cluster_pred)
 	
 	list_of_outer_points <- lapply(cluster_ids, function(i){
+		print(i)
 		points <- sf_points_clustered %>%
-			filter(cluster_pred == i)
+			filter(cluster_pred == i) %>%
+			as.data.table()
 		
 		lines <- sf_lines %>%
 			filter(cluster_pred==i)
@@ -293,6 +309,7 @@ r1_get_outer_points_per_cluster <- function(sf_points_clustered, sf_lines) {
 			) %>%
 			as.data.table()
 		
+		
 		outer_edges <- outer_edges %>%
 			mutate(
 				unattached_at_source = !(source %in% lines$target | 
@@ -300,9 +317,14 @@ r1_get_outer_points_per_cluster <- function(sf_points_clustered, sf_lines) {
 				unattached_at_target = !(target %in% lines$source | 
 																 	target %in% lines$target[-match(target, lines$target)])
 			)
+
+		rows <- which(points$id_edge %in% outer_edges$id)
+		outer_points <- points[rows,]
+	
+		# ggplot()+
+		# 	geom_sf(data=st_as_sf(outer_edges))+
+		# 	geom_sf(data = st_as_sf(points))
 		
-		outer_points <- points[which(points$id_edge %in% outer_edges$id),] %>%
-			as.data.table()
 		outer_points <- outer_points %>%
 			left_join(outer_edges %>% select(id, unattached_at_source, unattached_at_target),
 								by = c("id_edge" = "id"))
