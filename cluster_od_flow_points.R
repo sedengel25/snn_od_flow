@@ -4,73 +4,73 @@ source("./main_functions.R")
 ################################################################################
 # Trip data
 ################################################################################
-availabe_cluster_tables <- psql1_get_cluster_tables(con)
-print(availabe_cluster_tables)
-char_data_cluster <- availabe_cluster_tables[1, "table_name"]
+# availabe_cluster_tables <- psql1_get_cluster_tables(con)
+# print(availabe_cluster_tables)
+# char_data_cluster <- availabe_cluster_tables[1, "table_name"]
 
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
 char_network <- available_networks[1, "table_name"]
 
 
-char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
-char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
-print(char_av_dt_dist_mat_files)
-# stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[13]
-
-
-
-sf_cluster <- st_read(con, char_data_cluster)
-sf_cluster <- sf_cluster %>%
-	filter(cluster_pred!=0)
-sf_cluster_origin <- sf_cluster %>%
-	mutate(origin = lwgeom::st_startpoint(line_geom))
-st_geometry(sf_cluster_origin) <- "origin"
-sf_cluster_origin <- sf_cluster_origin %>%
-	select(cluster_pred, origin, origin_id, o_dist_to_start, o_dist_to_end)
-st_write(sf_cluster_origin, con, "origin_points_from_flows", delete_layer = TRUE)
-
-
-sf_cluster_dest <- sf_cluster %>%
-	mutate(dest = lwgeom::st_endpoint(line_geom))
-st_geometry(sf_cluster_dest) <- "dest"
-sf_cluster_dest <- sf_cluster_dest %>%
-	select(cluster_pred, dest, dest_id, d_dist_to_start, d_dist_to_end)
-
-st_write(sf_cluster_dest, con, "dest_points_from_flows", delete_layer = TRUE)
-
-
-sf_network <- st_read(con, char_network) 
-sf_network <- sf_network %>%
-	mutate(m = km*1000)
-
-
-sf_cluster_origin_or <- clean_point_clusters_lof(sf_cluster = sf_cluster_origin)
-sf_cluster_origin_or <- sf_cluster_origin_or %>%
-	rename(id_edge = origin_id,
-				 dist_to_start = o_dist_to_start,
-				 dist_to_end = o_dist_to_end) %>%
-	as.data.frame() %>%
-	rename(points = origin) %>%
-	st_as_sf()
-
-
-sf_cluster_dest_or <- clean_point_clusters_lof(sf_cluster = sf_cluster_dest)
-sf_cluster_dest_or <- sf_cluster_dest_or %>%
-	rename(id_edge = dest_id,
-				 dist_to_start = d_dist_to_start,
-				 dist_to_end = d_dist_to_end) %>%
-	as.data.frame() %>%
-	rename(points = dest) %>%
-	st_as_sf()
-
-
-sf_points <- rbind(sf_cluster_origin_or, sf_cluster_dest_or)
-sf_points$id <- 1:nrow(sf_points)
-sf_points <- sf_points %>%
-	rename(cluster_od = cluster_pred) #%>%
-	#select(cluster_od, id, points)
+# char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
+# char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
+# print(char_av_dt_dist_mat_files)
+# # stop("Have you chosen the right dist mat?")
+# char_dt_dist_mat <-  char_av_dt_dist_mat_files[13]
+# 
+# 
+# 
+# sf_cluster <- st_read(con, char_data_cluster)
+# sf_cluster <- sf_cluster %>%
+# 	filter(cluster_pred!=0)
+# sf_cluster_origin <- sf_cluster %>%
+# 	mutate(origin = lwgeom::st_startpoint(line_geom))
+# st_geometry(sf_cluster_origin) <- "origin"
+# sf_cluster_origin <- sf_cluster_origin %>%
+# 	select(cluster_pred, origin, origin_id, o_dist_to_start, o_dist_to_end)
+# st_write(sf_cluster_origin, con, "origin_points_from_flows", delete_layer = TRUE)
+# 
+# 
+# sf_cluster_dest <- sf_cluster %>%
+# 	mutate(dest = lwgeom::st_endpoint(line_geom))
+# st_geometry(sf_cluster_dest) <- "dest"
+# sf_cluster_dest <- sf_cluster_dest %>%
+# 	select(cluster_pred, dest, dest_id, d_dist_to_start, d_dist_to_end)
+# 
+# st_write(sf_cluster_dest, con, "dest_points_from_flows", delete_layer = TRUE)
+# 
+# 
+# sf_network <- st_read(con, char_network) 
+# sf_network <- sf_network %>%
+# 	mutate(m = km*1000)
+# 
+# 
+# sf_cluster_origin_or <- clean_point_clusters_lof(sf_cluster = sf_cluster_origin)
+# sf_cluster_origin_or <- sf_cluster_origin_or %>%
+# 	rename(id_edge = origin_id,
+# 				 dist_to_start = o_dist_to_start,
+# 				 dist_to_end = o_dist_to_end) %>%
+# 	as.data.frame() %>%
+# 	rename(points = origin) %>%
+# 	st_as_sf()
+# 
+# 
+# sf_cluster_dest_or <- clean_point_clusters_lof(sf_cluster = sf_cluster_dest)
+# sf_cluster_dest_or <- sf_cluster_dest_or %>%
+# 	rename(id_edge = dest_id,
+# 				 dist_to_start = d_dist_to_start,
+# 				 dist_to_end = d_dist_to_end) %>%
+# 	as.data.frame() %>%
+# 	rename(points = dest) %>%
+# 	st_as_sf()
+# 
+# 
+# sf_points <- rbind(sf_cluster_origin_or, sf_cluster_dest_or)
+# sf_points$id <- 1:nrow(sf_points)
+# sf_points <- sf_points %>%
+# 	rename(cluster_od = cluster_pred) %>%
+# 	select(cluster_od, id, points)
 
 
 ################################################################################
@@ -83,16 +83,16 @@ dt_network <- st_read(con, char_network) %>%
 	as.data.table()
 sf_network <- st_as_sf(dt_network) %>%
 	mutate(m = 1000*km)
-ggplot() +
-	geom_sf(data=sf_network)
-
-
-char_buffer <- "2000"
-dt_dist_mat <- read_rds(here::here(
-	char_path_dt_dist_mat,
-	char_dt_dist_mat))
-
-dt_dist_mat
+# ggplot() +
+# 	geom_sf(data=sf_network)
+# 
+# 
+# char_buffer <- "2000"
+# dt_dist_mat <- read_rds(here::here(
+# 	char_path_dt_dist_mat,
+# 	char_dt_dist_mat))
+# 
+# dt_dist_mat
 ################################################################################
 # Map points to network
 ################################################################################
@@ -118,41 +118,41 @@ source("./src/config.R")
 ################################################################################
 # Algo
 ################################################################################
-dt_pts_nd <- parallel_process_networks(sf_points, 
-																			 dt_network,
-																			 dt_dist_mat,
-																			 int_cores) %>%
-	as.data.table()
-
-
-gc()
-dt_sym <- copy(dt_pts_nd)
-dt_sym <- dt_sym[, .(from = to, to = from, distance)]
-dt_pts_nd_sym <- rbind(dt_pts_nd, dt_sym)
-rm(dt_pts_nd)
-rm(dt_sym)
-gc()
-
-int_k <- 40
-int_eps <- 20
-int_minpts <- 22
-
-dt_snn_pred_nd <- snn_flow(ids = sf_points$id,
-													 k = int_k,
-													 eps = int_eps,
-													 minpts = int_minpts,
-													 dt_flow_distance = dt_pts_nd_sym)
-
-
-table(dt_snn_pred_nd$cluster_pred)
-
-
-sf_cluster_pred_points <- sf_points %>%
-	left_join(dt_snn_pred_nd, by = c("id" = "id"))
-
-char_data_2_points <- paste0(
-	char_data_cluster, "_p2_", int_k, "_", int_eps, "_", int_minpts, "_points")
-st_write(sf_cluster_pred_points, con, char_data_2, delete_layer = TRUE)
+# dt_pts_nd <- parallel_process_networks(sf_points, 
+# 																			 dt_network,
+# 																			 dt_dist_mat,
+# 																			 int_cores) %>%
+# 	as.data.table()
+# 
+# 
+# gc()
+# dt_sym <- copy(dt_pts_nd)
+# dt_sym <- dt_sym[, .(from = to, to = from, distance)]
+# dt_pts_nd_sym <- rbind(dt_pts_nd, dt_sym)
+# rm(dt_pts_nd)
+# rm(dt_sym)
+# gc()
+# 
+# int_k <- 40
+# int_eps <- 20
+# int_minpts <- 22
+# 
+# dt_snn_pred_nd <- snn_flow(ids = sf_points$id,
+# 													 k = int_k,
+# 													 eps = int_eps,
+# 													 minpts = int_minpts,
+# 													 dt_flow_distance = dt_pts_nd_sym)
+# 
+# 
+# table(dt_snn_pred_nd$cluster_pred)
+# 
+# 
+# sf_cluster_pred_points <- sf_points %>%
+# 	left_join(dt_snn_pred_nd, by = c("id" = "id"))
+# 
+# char_data_2_points <- paste0(
+# 	char_data_cluster, "_p2_", int_k, "_", int_eps, "_", int_minpts, "_points")
+# st_write(sf_cluster_pred_points, con, char_data_2, delete_layer = TRUE)
 ################################################################################
 # Turn point-clusters into street segments
 ################################################################################
@@ -175,12 +175,9 @@ setkey(dt_network, id)
 
 r1_get_edge_ids_from_sp <- function(total_source_nodes, int_cl) {
 	list_all_cluster_edges <- list()
-	i <- 1
+	j <- 1
 	for(node_i in total_source_nodes){
-		#print("--------------------------------------------")
-		#cat("source: ", unconnected_node, "\n")
 		for(node_j in total_source_nodes){
-			#cat("target: ", connected_node, "\n")
 			if(node_i == node_j){
 				next
 			}
@@ -188,8 +185,6 @@ r1_get_edge_ids_from_sp <- function(total_source_nodes, int_cl) {
 														 source = node_i,
 														 target = node_j, 
 														 weight = "m")
-			#print(sp)
-			
 			pairs <- as.matrix(embed(sp, 2)[, 2:1])
 			edge_ids <- apply(pairs, 1, function(row) {
 				u <- row[1]
@@ -197,50 +192,73 @@ r1_get_edge_ids_from_sp <- function(total_source_nodes, int_cl) {
 				edge_id <- g$get_edge_data(u = u, v = v)$id
 				return(edge_id)
 			})
-			#cat("edge_ids: ", edge_ids, "\n")
-			#### HIER M*SSEN ALLE EDGE_IDS PRO CLUSTER GESPEICHERT UND DANN NDANACH ZUSAMMENGEFÜGT WERDen1!!!!!
-			list_all_cluster_edges[[i]] <- edge_ids
-			i <- i + 1
+			list_all_cluster_edges[[j]] <- edge_ids
+			j <- j + 1
 		}
 	}
-	#print(list_all_cluster_edges)
 	return(list_all_cluster_edges)
 }
 
-instantiate_py()
-g <- nx$from_pandas_edgelist(df = sf_network,
-														 source = "source",
-														 target = "target",
-														 edge_attr = c("m", "id"))
+# instantiate_py()
+# g <- nx$from_pandas_edgelist(df = sf_network,
+# 														 source = "source",
+# 														 target = "target",
+# 														 edge_attr = c("m", "id"))
 
+edges <- data.frame(from = sf_network$source,
+										to = sf_network$target,
+										weight = sf_network$m,
+										edge_id = sf_network$id)
 
-int_cl <- 1
+g <- graph_from_data_frame(edges, directed = FALSE)
+E(g)$edge_id <- edges$edge_id
 list_missing_edges <- list()
-missing_edges <- lapply(list_cluster_edges, function(edges){
-	#print("--------------------------------------------")
-	cat("Cluster: ", int_cl, "\n")
-	#edges <- list_cluster_edges[[3]]
-	x <- dt_network[id %in% edges, .(id, source, target)]
-	node_counts <- data.table(node = c(x$source, 
-																		 x$target))[, .N, by = node]
-	single_nodes <- node_counts[N == 1]$node
-	unconnected_edges <- x[source %in% single_nodes & target %in% single_nodes]
-	unconnected_source_nodes <- unconnected_edges$source
-	connected_source_nodes <- x$source[!(x$source %in% unconnected_source_nodes)]
-	total_source_nodes <- c(unconnected_source_nodes, 
-													connected_source_nodes)
-	# cat("connected_source_nodes: ", connected_source_nodes, "\n")
-	# cat("unconnected_source_nodes: ", unconnected_source_nodes, "\n")
-	missing_edges <- r1_get_edge_ids_from_sp(total_source_nodes, int_cl) %>% 
-		unlist() %>% 
-		unique()
-	#cat("missing edges for cluster ", int_cl, ": ", missing_edges, "\n")
-	list_missing_edges[[int_cl]] <<- missing_edges
-	int_cl <<- int_cl + 1
-	missing_edges
-})
+total_ids <- 1:max(sf_cluster_pred_points$cluster_pred)
+for(i in total_ids){
+	cat("Cluster: ", i, "\n")
+	i = 1
+	edges_cl <- list_cluster_edges[[i]]
+	selected_edges <- E(g)[edge_id %in% edges_cl]
+	subgraph <- subgraph.edges(g, selected_edges)
+	#subgraph <- as.undirected(subgraph)
+	# x <- dt_network[id %in% edges, .(id, source, target, m = 1000*km)]
+	# forest <- graph_from_data_frame(x, directed = FALSE)
 
-missing_edges <- list_missing_edges
+	comp <- components(subgraph)
+
+	# Nodes der einzelnen Komponenten extrahieren
+	components_nodes <- split(V(subgraph)$name, comp$membership)
+	# nodes_i <- V(g)[V(forest)$name[components == 1]]
+	# nodes_j <- V(g)[V(forest)$name[components == 2]]
+	# distances(g, v = nodes_i, to = nodes_j)
+	
+	# node_counts <- data.table(node = c(x$source, 
+	# 																	 x$target))[, .N, by = node]
+	# single_nodes <- node_counts[N == 1]$node
+	# unconnected_edges <- x[source %in% single_nodes & target %in% single_nodes]
+	# 
+	# 
+	# unconnected_nodes <- c(unconnected_edges$source, unconnected_edges$target)
+	# 
+	# 
+	# 
+	# connected_source_nodes <- x$source[!(x$source %in% unconnected_nodes)]
+	# connected_target_nodes <- x$target[!(x$target %in% unconnected_nodes)]
+	# connected_nodes <- c(connected_source_nodes, connected_target_nodes)
+	# 
+	# total_source_nodes <- c(unconnected_source_nodes, 
+	# 												connected_source_nodes)
+	if(length(unconnected_edges)>0){
+		missing_edges <- r1_get_edge_ids_from_sp(total_source_nodes, i) %>% 
+			unlist() %>% 
+			unique()
+		list_missing_edges[[i]] <- missing_edges
+	} else {
+		list_missing_edges[[i]] <- edges
+	}
+}
+
+
 
 contained_edges <- lapply(list_cluster_edges, function(edges){
 	x <- dt_network[id %in% edges, .(id, source, target)]
