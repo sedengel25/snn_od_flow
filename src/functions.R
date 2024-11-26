@@ -375,7 +375,9 @@ add_dist_start_end <- function(dt_points) {
 	return(dt_points)
 }
 
-
+################################################################################
+# 10_snn_od_points.R
+################################################################################
 # Documentation: clean_point_clusters_lof
 # Usage: clean_point_clusters_lof(sf_cluster)
 # Description: Outlier removing from clusters based on LOF
@@ -409,3 +411,324 @@ clean_point_clusters_lof <- function(sf_cluster) {
 	return(sf_cluster)
 }
 
+################################################################################
+# 11_create_network_clusters.R
+################################################################################
+# Documentation: get_networks_per_cluster
+# Usage: get_networks_per_cluster(sf_cluster_points, sf_network, g)
+# Description: Get MST-Linestrings for cluster points
+# Args/Options: sf_cluster_points, sf_network, g
+# Returns: sf-dataframe
+# Output: ...
+# Action: ...
+get_networks_per_cluster <- function(sf_cluster_points, 
+																		 sf_network,
+																		 g){
+	int_total_ids <- 1:max(sf_cluster_points$cluster_pred)
+	list_of_sf_subnetwork <- list()
+	for (i in int_total_ids) {
+		cat("Cluster: ", i, "\n")
+		# Get initial subgraph for cluster i based on the edges where points lie on
+		edges_cl <- list_cluster_edges[[i]]
+		selected_edges <- E(g)[edge_id %in% edges_cl]
+		subgraph <- subgraph.edges(g, selected_edges)
+		
+		# Get components of subgraph
+		comp <- components(subgraph)
+		
+		# As long as there are multiple components...
+		while (comp$no > 1) {
+			component_nodes <- split(V(subgraph), comp$membership)
+			
+			# Iterate over component pairs
+			for (j in 1:(length(component_nodes) - 1)) {
+				for (k in (j + 1):length(component_nodes)) {
+					node_j <- names(component_nodes[[j]])
+					node_k <- names(component_nodes[[k]])
+					
+					# Create a grid containing node pairs
+					pairs <- expand.grid(node_j, node_k)
+					
+					# Process each pair of nodes
+					for (l in 1:nrow(pairs)) {
+						# Get the shortest path
+						sp <- shortest_paths(
+							g,
+							from = as.character(pairs[l, 1]),
+							to = as.character(pairs[l, 2]),
+							weights = E(g)$weight
+						)
+						
+						# Extract the shortest path's edges
+						edges_of_path <- E(g, path = sp$vpath[[1]])
+						
+						# Add edges to the subgraph
+						subgraph <- induced_subgraph(
+							g,
+							vids = unique(c(as_ids(V(subgraph)), as.character(ends(g, edges_of_path))))
+						)
+						
+						# Recalculate the components
+						comp <- components(subgraph)
+						
+						# If components have changed, break all loops
+						if (comp$no < length(component_nodes)) {
+							#print("Components changed")
+							break
+						}
+					}
+					if (comp$no < length(component_nodes)) break
+				}
+				if (comp$no < length(component_nodes)) break
+			}
+		}
+		sf_subnetwork <- sf_network %>%
+			filter(id %in% E(subgraph)$edge_id) %>%
+			mutate(cluster_pred = i)
+		list_of_sf_subnetwork[[i]] <- sf_subnetwork 
+	}
+	
+	sf_cluster_networks <- rbindlist(list_of_sf_subnetwork)
+	return(sf_cluster_networks)
+}
+
+# Documentation: get_outer_points_per_cluster
+# Usage: get_outer_points_per_cluster(sf_cluster_points, sf_cluster_networks)
+# Description: Get most outer points of each cluster
+# Args/Options: sf_cluster_points, sf_cluster_networks
+# Returns: sf-dataframe
+# Output: ...
+# Action: ...
+get_outer_points_per_cluster <- function(sf_cluster_points, sf_cluster_networks) {
+	
+	cluster_ids <- 1:max(sf_cluster_points$cluster_pred)
+	
+	list_of_outer_points <- lapply(cluster_ids, function(i){
+		cat("Cluster: ", i, "\n")
+		points <- sf_cluster_points %>%
+			filter(cluster_pred == i) %>%
+			as.data.table()
+		
+		lines <- sf_cluster_networks %>%
+			filter(cluster_pred==i)
+		
+		node_counts <- data.table(node = c(lines$source, lines$target)) %>%
+			group_by(node) %>%
+			summarise(count = n())
+		
+		
+		outer_edges <- lines %>%
+			filter(
+				source %in% node_counts$node[node_counts$count == 1] |
+					target %in% node_counts$node[node_counts$count == 1]
+			) %>%
+			as.data.table()
+		
+		
+		outer_edges <- outer_edges %>%
+			mutate(
+				unattached_at_source = !(source %in% lines$target | 
+																 	source %in% lines$source[-match(source, lines$source)]),
+				unattached_at_target = !(target %in% lines$source | 
+																 	target %in% lines$target[-match(target, lines$target)])
+			)
+		
+		rows <- which(points$id_edge %in% outer_edges$id)
+		outer_points <- points[rows,]
+		
+		# ggplot()+
+		# 	geom_sf(data=st_as_sf(outer_edges))+
+		# 	geom_sf(data = st_as_sf(points))
+		
+		outer_points <- outer_points %>%
+			left_join(outer_edges %>% select(id, unattached_at_source, unattached_at_target),
+								by = c("id_edge" = "id"))
+		
+		most_outer_points <- outer_points %>%
+			group_by(id_edge) %>%
+			filter(
+				(unattached_at_source & dist_to_start == min(dist_to_start)) | 
+					(unattached_at_target & dist_to_end == min(dist_to_end))
+			) %>%
+			ungroup() %>%
+			as.data.frame() %>%
+			st_as_sf()
+		
+		most_outer_points
+	})
+	sf_outer_points <- rbindlist(list_of_outer_points) %>%
+		st_as_sf()
+	return(sf_outer_points)
+}
+
+
+
+
+# Documentation: get_outer_points_per_cluster
+# Usage: get_outer_points_per_cluster(sf_cluster_points, sf_cluster_networks)
+# Description: Get most outer points of each cluster
+# Args/Options: sf_cluster_points, sf_cluster_networks
+# Returns: sf-dataframe
+# Output: ...
+# Action: ...
+reduce_networks_to_op <- function(sf_cluster_networks, 
+																	sf_cluster_outerpoints) {
+	total_ids <- 1:max(sf_cluster_networks$cluster_pred)
+	
+	list_sf_networks <- list()
+	
+	
+	for (i in total_ids){
+		cat("Cluster: ", i, "\n")
+		# Get outer points per cluster
+		op1 <- sf_cluster_outerpoints %>%
+			filter(cluster_pred==i) %>%
+			as.data.frame() %>%
+			st_as_sf()
+		
+		# Get street network involved in cluster
+		npc1 <- sf_cluster_networks %>%
+			filter(cluster_pred==i) %>%
+			as.data.frame() %>%
+			st_as_sf()
+		
+		# ggplot()+
+		#  	geom_sf(data=op1)+
+		#  	geom_sf(data=npc1)
+		
+		# Transform cluster-network to sf-network
+		network_cl <- as_sfnetwork(npc1, directed = FALSE)
+		
+		network_cl_nodes <- network_cl %>%
+			activate("nodes") %>%
+			as.data.frame() %>%
+			st_as_sf()
+		
+		network_cl_edges <- network_cl %>%
+			activate("edges") %>%
+			as.data.frame() %>%
+			st_as_sf() 
+		
+		
+		# If cluster consists of only one point (station) draw a linestring to a almost
+		# identical point to get the same sfc-format for all clusters
+		if(nrow(op1)==1 & nrow(npc1)==1){
+			coords <- st_coordinates(op1)
+			near_coords <- coords + c(0.0001, -0.0001)
+			new_linestring <- st_linestring(rbind(coords, near_coords))
+			st_geometry(network_cl_edges) <- st_sfc(new_linestring,
+																							crs = st_crs(network_cl_edges))
+			
+			list_sf_networks[[i]] <- network_cl_edges
+			next
+		}
+		# ggplot()+
+		#  	geom_sf(data=network_cl_edges)+
+		#  	geom_sf(data=network_cl_nodes)+
+		# 	geom_sf(data=op1)
+		
+		
+		# Find outerpoints that are also nodes in the sf-network...
+		duplicates <- st_intersects(op1, network_cl_nodes, sparse = FALSE)
+		idx_duplicates <- which(duplicates, arr.ind = TRUE)
+		idx_duplicates <- idx_duplicates[,1]
+		
+		# when 1 line, 2 outerpoints und 1 outerpoint==network node, dann
+		if(nrow(op1)==2 & nrow(npc1)==1 & length(idx_duplicates)==1){
+			network_cl_ext <- st_network_blend(network_cl, op1)
+			# 1. Set index for row number
+			network_cl_ext <- network_cl_ext %>%
+				activate("nodes") %>%
+				mutate(node_index = row_number()) # Numeriere Knoten explizit
+			
+			# 2. Get the row with NA-entry as this got added by blending but we don't want it
+			na_nodes <- network_cl_ext %>%
+				activate("nodes") %>%
+				filter(is.na(cluster_od) | is.na(id_edge)) %>%
+				pull(node_index)
+			
+			network_cl_ext_edges <- network_cl_ext %>%
+				activate("edges") %>%
+				filter(!from %in% na_nodes & !to %in% na_nodes) %>%
+				as.data.frame() %>%
+				st_as_sf()
+			
+			# ggplot()+
+			# 	geom_sf(data=network_cl_ext_edges)+
+			# 	geom_sf(data=op1)
+			
+			list_sf_networks[[i]] <- network_cl_ext_edges
+			
+			next	
+		}
+		
+		if(length(idx_duplicates)>0){
+			op1 <- op1[-idx_duplicates,]
+		}
+		
+		# ggplot()+
+		# 	geom_sf(data=op1)+
+		# 	geom_sf(data=npc1)
+		
+		# Turn outer points into nodes of the network
+		network_cl_ext <- st_network_blend(network_cl, op1)
+		
+		network_cl_ext_nodes <- network_cl_ext %>%
+			activate("nodes") %>%
+			st_as_sf()
+		
+		network_cl_ext_edges <- network_cl_ext %>%
+			activate("edges") %>%
+			st_as_sf()
+		
+		network_cl_ext_edges <- network_cl_ext_edges %>%
+			mutate(id_new = 1:nrow(network_cl_ext_edges))
+		
+		# ggplot()+
+		#  	geom_sf(data=st_as_sf(network_cl_ext_edges))+
+		#  	geom_sf(data=network_cl_ext_nodes)
+		
+		# Find nodes that appear only once and thus represent outer nodes
+		node_counts <- data.table(node = c(network_cl_ext_edges$from, 
+																			 network_cl_ext_edges$to)) %>%
+			group_by(node) %>%
+			summarise(count = n())
+		
+		# Find the corresponding edges
+		all_outer_edges <- network_cl_ext_edges %>%
+			filter(
+				from %in% node_counts$node[node_counts$count == 1] |
+					to %in% node_counts$node[node_counts$count == 1]
+			) %>%
+			as.data.table()
+		
+		
+		
+		# From all outer edges, find the ones that were newly created by the blending...
+		new_outer_edges <- all_outer_edges %>%
+			dplyr::anti_join(network_cl_edges, by = c("from", "to"))
+		
+		
+		# ... and remove them
+		# This can be dangerous in the edge-case of cluster 62 where the 2 outerpoints
+		# are on the one single linestring and it is also equal to one node of
+		# the original linestring
+		network_cl_ext_edges <- network_cl_ext_edges %>%
+			filter(!id_new %in% new_outer_edges$id_new) %>%
+			st_as_sf()
+		
+		
+		p <- ggplot()+
+			geom_sf(data=network_cl_ext_edges)+
+			geom_sf(data=op1) 
+	
+		network_cl_ext_edges <- network_cl_ext_edges %>%
+			select(-id_new)
+		list_sf_networks[[i]] <- network_cl_ext_edges
+	}
+	
+	sf_cluster_networks <- rbindlist(list_sf_networks) %>%
+		st_as_sf()
+	
+	return(sf_cluster_networks)
+}

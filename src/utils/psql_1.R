@@ -394,6 +394,18 @@ psql1_get_cluster_tables <- function(con) {
 	return(char_availabe_cluster_tables)
 }
 
+psql1_get_point_cluster_tables <- function(con) {
+	query <- paste0("SELECT table_schema, table_name
+    FROM information_schema.tables
+    WHERE table_name LIKE '%\\_p2\\_%' ESCAPE '\\'
+      AND table_name NOT LIKE '%\\_cl\\_%' ESCAPE '\\'
+      AND table_type = 'BASE TABLE'
+      AND table_schema NOT IN ('pg_catalog', 'information_schema');
+  ")
+	
+	char_availabe_cluster_tables <- dbGetQuery(con, query)
+	return(char_availabe_cluster_tables)
+}
 
 
 psql1_calc_overlay_distance <- function(con, char_sf_pol){

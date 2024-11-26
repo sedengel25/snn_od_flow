@@ -147,8 +147,9 @@ path_variables <- ls(pattern = "^path")
 
 path_variables <- path_variables[-length(path_variables)]
 
-lapply(mget(path_variables), function(paths) {
-	for (x in paths) {
+lapply(mget(path_variables), function(char_paths) {
+	print(char_paths)
+	for (x in char_paths) {
 		if (!dir.exists(x)){
 			dir.create(x, recursive = TRUE)
 		}
