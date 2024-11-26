@@ -214,48 +214,68 @@ g <- graph_from_data_frame(edges, directed = FALSE)
 E(g)$edge_id <- edges$edge_id
 list_missing_edges <- list()
 total_ids <- 1:max(sf_cluster_pred_points$cluster_pred)
-for(i in total_ids){
+for (i in total_ids) {
+	i = 39
 	cat("Cluster: ", i, "\n")
-	i = 1
+
+	# Get initial subgraph for cluster i based on the edges where points lie on
 	edges_cl <- list_cluster_edges[[i]]
 	selected_edges <- E(g)[edge_id %in% edges_cl]
 	subgraph <- subgraph.edges(g, selected_edges)
-	#subgraph <- as.undirected(subgraph)
-	# x <- dt_network[id %in% edges, .(id, source, target, m = 1000*km)]
-	# forest <- graph_from_data_frame(x, directed = FALSE)
-
-	comp <- components(subgraph)
-
-	# Nodes der einzelnen Komponenten extrahieren
-	components_nodes <- split(V(subgraph)$name, comp$membership)
-	# nodes_i <- V(g)[V(forest)$name[components == 1]]
-	# nodes_j <- V(g)[V(forest)$name[components == 2]]
-	# distances(g, v = nodes_i, to = nodes_j)
 	
-	# node_counts <- data.table(node = c(x$source, 
-	# 																	 x$target))[, .N, by = node]
-	# single_nodes <- node_counts[N == 1]$node
-	# unconnected_edges <- x[source %in% single_nodes & target %in% single_nodes]
-	# 
-	# 
-	# unconnected_nodes <- c(unconnected_edges$source, unconnected_edges$target)
-	# 
-	# 
-	# 
-	# connected_source_nodes <- x$source[!(x$source %in% unconnected_nodes)]
-	# connected_target_nodes <- x$target[!(x$target %in% unconnected_nodes)]
-	# connected_nodes <- c(connected_source_nodes, connected_target_nodes)
-	# 
-	# total_source_nodes <- c(unconnected_source_nodes, 
-	# 												connected_source_nodes)
-	if(length(unconnected_edges)>0){
-		missing_edges <- r1_get_edge_ids_from_sp(total_source_nodes, i) %>% 
-			unlist() %>% 
-			unique()
-		list_missing_edges[[i]] <- missing_edges
-	} else {
-		list_missing_edges[[i]] <- edges
+	# Get components of subgraph
+	comp <- components(subgraph)
+	
+	# As long as there are multiple components...
+	while (comp$no > 1) {
+		component_nodes <- split(V(subgraph), comp$membership)
+		
+		# Iterate over component pairs
+		for (j in 1:(length(component_nodes) - 1)) {
+			for (k in (j + 1):length(component_nodes)) {
+				j=1
+				k=2
+				node_j <- names(component_nodes[[j]])
+				node_k <- names(component_nodes[[k]])
+				
+				# Create a grid containing node pairs
+				pairs <- expand.grid(node_j, node_k)
+				
+				# Process each pair of nodes
+				for (l in 1:nrow(pairs)) {
+					l=1
+					# Get the shortest path
+					sp <- shortest_paths(
+						g,
+						from = as.character(pairs[l, 1]),
+						to = as.character(pairs[l, 2]),
+						weights = E(g)$weight
+					)
+					
+					# Extract the shortest path's edges
+					path_edges <- E(g, path = sp$vpath[[1]])
+					
+					# Add edges to the subgraph
+					subgraph <- induced_subgraph(
+						g,
+						vids = unique(c(as_ids(V(subgraph)), as.character(ends(g, path_edges))))
+					)
+					
+					# Recalculate the components
+					comp <- components(subgraph)
+					
+					# If components have changed, break all loops
+					if (comp$no < length(component_nodes)) {
+						print("Components changed")
+						break
+					}
+				}
+				if (comp$no < length(component_nodes)) break
+			}
+			if (comp$no < length(component_nodes)) break
+		}
 	}
+	break
 }
 
 
