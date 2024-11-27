@@ -408,6 +408,17 @@ psql1_get_point_cluster_tables <- function(con) {
 }
 
 
+psql1_get_network_clusters <- function(con) {
+	query <- paste0("SELECT table_schema, table_name
+    FROM information_schema.tables
+    WHERE table_name LIKE '%\\_cl\\_network\\_red%' ESCAPE '\\'
+      AND table_schema NOT IN ('pg_catalog', 'information_schema');
+  ")
+	
+	char_availabe_cluster_tables <- dbGetQuery(con, query)
+	return(char_availabe_cluster_tables)
+}
+
 psql1_calc_overlay_distance <- function(con, char_sf_pol){
 	query <- paste0("WITH pairs AS (
 	  SELECT 
