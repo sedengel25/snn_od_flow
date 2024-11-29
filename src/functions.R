@@ -505,6 +505,7 @@ get_outer_points_per_cluster <- function(sf_cluster_points, sf_cluster_networks)
 	
 	list_of_outer_points <- lapply(cluster_ids, function(i){
 		cat("Cluster: ", i, "\n")
+		i=22
 		points <- sf_cluster_points %>%
 			filter(cluster_pred == i) %>%
 			as.data.table()

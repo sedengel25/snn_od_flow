@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[1, "table_name"]
+char_network <- available_networks[2, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
@@ -17,7 +17,7 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[13]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
 char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -32,22 +32,22 @@ dt_dist_mat <- dt_dist_mat %>%
 
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 print(available_mapped_trip_data)
-char_data <- available_mapped_trip_data[1, "table_name"]
+char_data <- available_mapped_trip_data[2, "table_name"]
 sf_trips <- st_read(con, char_data) %>%
 	rename("origin_id" = "id_edge_origin",
 				 "dest_id" = "id_edge_dest")
 
-
+char_data <- substr(char_data, 1, nchar(char_data) - 7)
 sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 2000
+dist_filter <- 1500
 sf_trips <- sf_trips %>%
 	filter(trip_distance >= dist_filter)
 
 
-int_kw <- c(11,12,13)
+int_kw <- c(3,4,5,6,7)
 # if(char_prefix_data == "sr"){
 # 	sf_trips <- sf_trips %>%
 # 		filter(trip_distance > 2000)
@@ -91,6 +91,8 @@ rm(dt_pts_nd)
 
 
 dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
+rm(dt_o_pts_nd)
+rm(dt_d_pts_nd)
 gc()
 dt_flow_nd[, distance := distance.x + distance.y]
 dt_flow_nd <- dt_flow_nd[, .(flow_m = from, flow_n = to, distance)]
@@ -102,6 +104,7 @@ dt_sym <- rbind(
 )
 
 gc()
+rm(dt_flow_nd)
 dt_flow_nd <- dt_sym
 dt_flow_nd <- dt_flow_nd %>%
 	rename(from = flow_m,
@@ -140,7 +143,10 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
 	theme_minimal()
 
+
 st_write(sf_cluster_nd_pred, con, paste0(char_data, 
+																					 "_kw_",
+																					 paste0(int_kw, collapse = "_"),
 																					 "_f", 
 																					 dist_filter, 
 																					 "_p",
@@ -149,7 +155,7 @@ st_write(sf_cluster_nd_pred, con, paste0(char_data,
 																					 int_eps,
 																					 "_",
 																					 int_minpts,
-																					 "_cluster"))
+																					 "_cl"))
 
 
 

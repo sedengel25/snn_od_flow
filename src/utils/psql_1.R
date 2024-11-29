@@ -346,6 +346,7 @@ psql1_get_available_networks <- function(con) {
 	query <- paste0("SELECT table_schema, table_name
   FROM information_schema.tables
   WHERE table_name LIKE '%2po_4pgr%'
+  	AND table_name NOT LIKE '%dist%'
     AND table_type = 'BASE TABLE'
     AND table_schema NOT IN ('pg_catalog', 'information_schema');
   ")
@@ -372,7 +373,7 @@ psql1_get_mapped_trip_data <- function(con) {
 	query <- paste0("SELECT table_schema, table_name
   FROM information_schema.tables
   WHERE table_name NOT LIKE '%2po_4pgr%'
-     AND table_name LIKE '%mapped%'
+     AND table_name LIKE '%mapped'
     AND table_type = 'BASE TABLE'
     AND table_schema NOT IN ('pg_catalog', 'information_schema');
   ")
@@ -385,7 +386,7 @@ psql1_get_mapped_trip_data <- function(con) {
 psql1_get_cluster_tables <- function(con) {
 	query <- paste0("SELECT table_schema, table_name
   FROM information_schema.tables
-  WHERE table_name LIKE '%cluster%'
+  WHERE table_name LIKE '%cl%'
     AND table_type = 'BASE TABLE'
     AND table_schema NOT IN ('pg_catalog', 'information_schema');
   ")
@@ -397,8 +398,7 @@ psql1_get_cluster_tables <- function(con) {
 psql1_get_point_cluster_tables <- function(con) {
 	query <- paste0("SELECT table_schema, table_name
     FROM information_schema.tables
-    WHERE table_name LIKE '%\\_p2\\_%' ESCAPE '\\'
-      AND table_name NOT LIKE '%\\_cl\\_%' ESCAPE '\\'
+    WHERE table_name LIKE '%cl2%'
       AND table_type = 'BASE TABLE'
       AND table_schema NOT IN ('pg_catalog', 'information_schema');
   ")
@@ -450,4 +450,56 @@ psql1_calc_overlay_distance <- function(con, char_sf_pol){
 	FROM areas;
 	")
 	return(dbGetQuery(con, query))
+}
+
+
+
+
+psql1_sample_points_on_network <- function(con, 
+																					 char_network, 
+																					 char_network_sampled_pts,
+																					 int_dist) {
+	
+	query <- "DROP TABLE IF EXISTS temp_segmentized_lines"
+	dbExecute(con, query)
+	query <- paste0("CREATE TEMP TABLE temp_segmentized_lines AS
+  SELECT 
+    id AS id_edge,
+    source,
+    target,
+    ST_Segmentize(geom_way,", int_dist, ") AS geom_way -- Segmentiere Linie in 2-Meter-Intervalle
+  FROM ", char_network, ";")
+	dbExecute(con, query)
+	
+	
+	query <- "DROP TABLE IF EXISTS temp_exploded_points"
+	dbExecute(con, query)
+	query <- paste0("-- Temporäre Tabelle mit den Punkten (fix alle 2 Meter)
+  CREATE TEMP TABLE temp_exploded_points AS
+  SELECT 
+    id_edge,
+    source,
+    target,
+    (ST_DumpPoints(geom_way)).geom AS geom -- Punkte aus den segmentierten Linien extrahieren
+  FROM temp_segmentized_lines;")
+	dbExecute(con, query)
+	
+	query <- paste0("DROP TABLE IF EXISTS ", char_network_sampled_pts)
+	dbExecute(con, query)
+	query <- paste0("CREATE TABLE ", char_network_sampled_pts, " AS
+  SELECT 
+  	ROW_NUMBER() OVER () AS id,
+    temp_exploded_points.id_edge,
+    temp_exploded_points.source AS source_node,
+    temp_exploded_points.target AS target_node,
+    temp_exploded_points.geom AS geometry,
+    ST_Length(", char_network, ".geom_way) * 
+    ST_LineLocatePoint(", char_network, ".geom_way, temp_exploded_points.geom) AS 
+    dist_to_source,
+    ST_Length(", char_network, ".geom_way) * 
+    (1 - ST_LineLocatePoint(", char_network, ".geom_way, temp_exploded_points.geom)) AS 
+    dist_to_target
+  FROM temp_exploded_points
+  JOIN ", char_network," ON temp_exploded_points.id_edge = ", char_network, ".id;")
+	dbExecute(con, query)
 }

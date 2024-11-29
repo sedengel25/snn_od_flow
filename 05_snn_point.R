@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[12, "table_name"]
+char_network <- available_networks[1, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
@@ -44,8 +44,8 @@ sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 
 
-dist_filter <- 5000
-int_kw <- c(13)
+dist_filter <- 500
+int_kw <- c(12,13)
 sf_trips <- sf_trips %>%
 	filter(week %in% int_kw,
 				 trip_distance >= dist_filter)
@@ -56,7 +56,7 @@ sf_trips <- sf_trips %>% mutate(o_id = as.integer(o_id),
 																d_id = as.integer(d_id))
 
 
-sf_trips
+
 sf_points <- sf_trips %>%
 	pivot_longer(
 		cols = starts_with("o_") | starts_with("d_"),
@@ -69,6 +69,8 @@ sf_points <- sf_trips %>%
 	mutate(id = 1:(2*nrow(sf_trips))) %>%
 	st_as_sf()
 
+rm(sf_trips)
+gc()
 t_start <- proc.time()
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix

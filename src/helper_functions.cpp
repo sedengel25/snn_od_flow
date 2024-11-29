@@ -41,7 +41,6 @@ double get_distance(const std::map<std::pair<int, int>, int>& dist_map, int sour
 	auto it = dist_map.find(std::make_pair(std::min(source, target), std::max(source, target)));
 	return (it != dist_map.end()) ? it->second : -1.0;
 }
-
 // Struktur zur parallelen Verarbeitung von Netzwerken
 struct NetworkProcessor : public Worker {
 	const IntegerVector& od_pts_full_id;
@@ -79,12 +78,12 @@ struct NetworkProcessor : public Worker {
 	
 	void operator()(std::size_t begin, std::size_t end) {
 		for (std::size_t i = begin; i < end; ++i) {
-
+			
 			int point_ij = od_pts_full_id[i];
 			int line_ij = od_pts_full_line_id[i];
 			int start_ij = od_pts_full_start[i];
 			int end_ij = od_pts_full_end[i];
-
+			
 			
 			auto it_ij = network_map.find(line_ij);
 			if (it_ij == network_map.end()) continue;
@@ -137,6 +136,117 @@ struct NetworkProcessor : public Worker {
 		}
 	}
 };
+
+
+// Struktur zur parallelen Verarbeitung von Netzwerken
+struct NetworkProcessor_2 : public Worker {
+	const IntegerVector& od_pts_org_id;
+	const IntegerVector& od_pts_org_line_id;
+	const IntegerVector& od_pts_org_start;
+	const IntegerVector& od_pts_org_end;
+	const IntegerVector& od_pts_sampled_id;
+	const IntegerVector& od_pts_sampled_line_id;
+	const IntegerVector& od_pts_sampled_start;
+	const IntegerVector& od_pts_sampled_end;
+	const std::map<int, std::pair<int, int>>& network_map;
+	const std::map<std::pair<int, int>, int>& dist_map;
+	
+	std::vector<int>& from_points;
+	std::vector<int>& to_points;
+	std::vector<int>& distances;
+	std::mutex& mtx; // Mutex für thread-sicheren Zugriff
+	
+	NetworkProcessor_2(const IntegerVector& od_pts_org_id,
+                  const IntegerVector& od_pts_org_line_id,
+                  const IntegerVector& od_pts_org_start,
+                  const IntegerVector& od_pts_org_end,
+                  const IntegerVector& od_pts_sampled_id,
+                  const IntegerVector& od_pts_sampled_line_id,
+                  const IntegerVector& od_pts_sampled_start,
+                  const IntegerVector& od_pts_sampled_end,
+                  const std::map<int, std::pair<int, int>>& network_map,
+                  const std::map<std::pair<int, int>, int>& dist_map,
+                  std::vector<int>& from_points,
+                  std::vector<int>& to_points,
+                  std::vector<int>& distances,
+                  std::mutex& mtx)
+		: od_pts_org_id(od_pts_org_id),
+    od_pts_org_line_id(od_pts_org_line_id),
+    od_pts_org_start(od_pts_org_start),
+    od_pts_org_end(od_pts_org_end),
+    od_pts_sampled_id(od_pts_sampled_id),
+    od_pts_sampled_line_id(od_pts_sampled_line_id),
+    od_pts_sampled_start(od_pts_sampled_start),
+    od_pts_sampled_end(od_pts_sampled_end),
+    network_map(network_map),
+    dist_map(dist_map),
+    from_points(from_points),
+    to_points(to_points),
+    distances(distances),
+    mtx(mtx) {}
+	
+	void operator()(std::size_t begin, std::size_t end) {
+		for (std::size_t i = begin; i < end; ++i) {
+
+			int point_ij = od_pts_sampled_id[i];
+			int line_ij = od_pts_sampled_line_id[i];
+			int start_ij = od_pts_sampled_start[i];
+			int end_ij = od_pts_sampled_end[i];
+
+			
+			auto it_ij = network_map.find(line_ij);
+			if (it_ij == network_map.end()) continue;
+			
+			int source_ij = it_ij->second.first;
+			int target_ij = it_ij->second.second;
+			
+			for (std::size_t j = 0; j < od_pts_org_id.size(); ++j) {
+				int point_kl = od_pts_org_id[j];
+				int line_kl = od_pts_org_line_id[j];
+				int start_kl = od_pts_org_start[j];
+				int end_kl = od_pts_org_end[j];
+				if (point_ij == point_kl) continue;
+				
+				auto it_kl = network_map.find(line_kl);
+				if (it_kl == network_map.end()) continue;
+				
+				if (it_ij == it_kl) {
+					int om_on_distance_diff = start_kl - start_ij;
+					int om_on_distance = std::abs(om_on_distance_diff);
+					std::lock_guard<std::mutex> guard(mtx);
+					from_points.push_back(point_ij);
+					to_points.push_back(point_kl);
+					distances.push_back(om_on_distance);
+					continue;
+				}
+				
+				int source_kl = it_kl->second.first;
+				int target_kl = it_kl->second.second;
+				
+				int nd_ik = get_distance(dist_map, source_ij, source_kl);
+				int nd_jl = get_distance(dist_map, target_ij, target_kl);
+				int nd_il = get_distance(dist_map, source_ij, target_kl);
+				int nd_jk = get_distance(dist_map, source_kl, target_ij);
+				
+				if (nd_ik == -1.0 || nd_jl == -1.0 || nd_il == -1.0 || nd_jk == -1.0) continue;
+				
+				int om_on_distance = std::min({
+					start_ij + start_kl + nd_ik,
+					end_ij + end_kl + nd_jl,
+					start_ij + end_kl + nd_il,
+					end_ij + start_kl + nd_jk
+				});
+				
+				std::lock_guard<std::mutex> guard(mtx);
+				from_points.push_back(point_ij);
+				to_points.push_back(point_kl);
+				distances.push_back(om_on_distance);
+			}
+		}
+	}
+};
+
+
 
 
 void write_results_to_file(const std::string& filename, 
@@ -205,6 +315,78 @@ DataFrame parallel_process_networks(DataFrame dt_od_pts_full,
 	std::time_t start_time2 = std::chrono::system_clock::to_time_t(start);
 	
 	parallelFor(0, od_pts_full_id.size(), worker, chunk_size);
+	
+	auto end2 = std::chrono::system_clock::now();
+	std::time_t end_time2 = std::chrono::system_clock::to_time_t(end);
+	std::chrono::duration<double> elapsed_seconds2 = end2 - start2;
+	Rcpp::Rcout << "Time needed for calculating network distances: " << elapsed_seconds2.count() << " seconds." << std::endl;
+	
+	//write_results_to_file(filename, from_points, to_points, distances);
+	
+	return DataFrame::create(Named("from") = from_points,
+                          Named("to") = to_points,
+                          Named("distance") = distances);
+}
+
+
+
+// Funktion zur parallelen Verarbeitung von Netzwerken
+// [[Rcpp::export]]
+DataFrame parallel_process_networks_2(DataFrame dt_od_pts_org,
+                                      DataFrame dt_od_pts_sampled,
+                                    DataFrame dt_network,
+                                    DataFrame dt_dist_mat,
+                                    int num_cores) {
+	
+	
+	
+	auto start = std::chrono::system_clock::now();
+	std::time_t start_time = std::chrono::system_clock::to_time_t(start);
+	
+	
+	static std::map<std::pair<int, int>, int> dist_map;
+	std::call_once(map_initialized, initialize_map, std::ref(dist_map), dt_dist_mat);
+	
+	auto end = std::chrono::system_clock::now();
+	std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+	std::chrono::duration<double> elapsed_seconds = end - start;
+	Rcpp::Rcout << "Time needed for converting dt_dist_mat into cpp map: " << elapsed_seconds.count() << " seconds." << std::endl;
+	
+	
+	IntegerVector od_pts_org_id = dt_od_pts_org["id"];
+	IntegerVector od_pts_org_line_id = dt_od_pts_org["id_edge"];
+	IntegerVector od_pts_org_start = dt_od_pts_org["dist_to_start"];
+	IntegerVector od_pts_org_end = dt_od_pts_org["dist_to_end"];
+	
+	IntegerVector od_pts_sampled_id = dt_od_pts_sampled["id"];
+	IntegerVector od_pts_sampled_line_id = dt_od_pts_sampled["id_edge"];
+	IntegerVector od_pts_sampled_start = dt_od_pts_sampled["dist_to_source"];
+	IntegerVector od_pts_sampled_end = dt_od_pts_sampled["dist_to_target"];
+	
+	
+	auto network_map = create_network_map(dt_network);
+	
+	std::vector<int> from_points;
+	std::vector<int> to_points;
+	std::vector<int> distances;
+	
+	std::mutex mtx; // Mutex für diese Funktion
+	
+	// Berechnung der Chunk-Größe
+	std::size_t chunk_size = (od_pts_sampled_id.size() + num_cores - 1) / num_cores;
+	
+	
+	// Initialisieren des Workers
+	NetworkProcessor_2 worker(od_pts_org_id, od_pts_org_line_id, od_pts_org_start, 
+                         od_pts_org_end, od_pts_sampled_id, od_pts_sampled_line_id, od_pts_sampled_start, 
+                         od_pts_sampled_end, network_map, dist_map, from_points, 
+                         to_points, distances, mtx);
+	
+	// Parallele Verarbeitung der Blöcke
+	auto start2 = std::chrono::system_clock::now();
+	std::time_t start_time2 = std::chrono::system_clock::to_time_t(start);
+	
+	parallelFor(0, od_pts_sampled_id.size(), worker, chunk_size);
 	
 	auto end2 = std::chrono::system_clock::now();
 	std::time_t end_time2 = std::chrono::system_clock::to_time_t(end);

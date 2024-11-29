@@ -11,7 +11,7 @@ sourceCpp("./src/helper_functions.cpp")
 ################################################################################
 list.files(path = path_bbox_coordinates, pattern = "*.poly")
 
-char_region_abb <- "dd"
+char_region_abb <- "dd_center"
 
 char_polygon_filename <- paste0(char_region_abb, ending_polygon)   
 

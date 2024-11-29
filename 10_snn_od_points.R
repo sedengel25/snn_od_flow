@@ -6,12 +6,12 @@ source("./main_functions.R")
 ################################################################################
 availabe_cluster_tables <- psql1_get_cluster_tables(con)
 print(availabe_cluster_tables)
-char_data <- availabe_cluster_tables[1, "table_name"]
+char_data <- availabe_cluster_tables[3, "table_name"]
 
 
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[1, "table_name"]
+char_network <- available_networks[2, "table_name"]
 dt_network <- st_read(con, char_network) %>%
 	as.data.table()
 sf_network <- st_as_sf(dt_network) %>%
@@ -23,7 +23,7 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[13]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
 char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -77,28 +77,11 @@ sf_old_cluster_points_cleaned$id <- 1:nrow(sf_old_cluster_points_cleaned)
 sf_old_cluster_points_cleaned <- sf_old_cluster_points_cleaned %>%
 	rename(cluster_od = cluster_pred)
 
-
-################################################################################
-# Map points to network
-################################################################################
-# int_crs <- 32632
-# char_data <- paste0(char_data_cluster, "_mapped")
-# st_write(sf_points, con, char_data, delete_layer = TRUE)Rcpp::sourceCpp("./src/helper_functions.cpp")
-# 
-# 
-# psql1_create_spatial_index(con, char_data)
-# psql1_create_spatial_index(con, char_network)
-# 
-# psql1_map_points_onto_network(con,
-# 																 char_network,
-# 																 char_data,
-# 																 crs = int_crs)
-# 
-# available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
-# print(available_mapped_trip_data)
-# char_point_data <- available_mapped_trip_data[17, "table_name"]
-# sf_points <- st_read(con, char_point_data)
-
+rm(sf_old_cluster_points)
+rm(sf_old_cluster_points_dest)
+rm(sf_old_cluster_points_dest_or)
+rm(sf_old_cluster_points_origin)
+rm(sf_old_cluster_points_origin_or)
 ################################################################################
 # Algo
 ################################################################################
@@ -117,9 +100,9 @@ rm(dt_pts_nd)
 rm(dt_sym)
 gc()
 
-int_k <- 40
-int_eps <- 20
-int_minpts <- 22
+int_k <- 30
+int_eps <- 15
+int_minpts <- 17
 
 dt_snn_pred_nd <- snn_flow(ids = sf_old_cluster_points_cleaned$id,
 													 k = int_k,
@@ -135,5 +118,5 @@ sf_new_cluster_points <- sf_old_cluster_points_cleaned %>%
 	left_join(dt_snn_pred_nd, by = c("id" = "id"))
 char_data
 char_new_cluster_points <- paste0(
-	char_data, "_p2_", int_k, "_", int_eps, "_", int_minpts, "_points")
+	char_data, "_p2_", int_k, "_", int_eps, "_", int_minpts, "_cl2")
 st_write(sf_new_cluster_points, con, char_new_cluster_points, delete_layer = TRUE)
