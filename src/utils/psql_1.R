@@ -93,10 +93,10 @@ psql1_transform_coordinates <- function(con, table, crs) {
 psql1_create_spatial_index <- function(con, table) {
 	
 	char_idx <- paste0(table, "_geometry_idx")
-
+	print(char_idx)
 	query <- paste0("DROP INDEX IF EXISTS ", char_idx)
 	dbExecute(con, query)
-	
+	cat(query)
 	
 	name_geom_col <- psql2_get_name_of_geom_col(con, table)
 	print(name_geom_col)
@@ -408,10 +408,12 @@ psql1_get_point_cluster_tables <- function(con) {
 }
 
 
+
+
 psql1_get_network_clusters <- function(con) {
 	query <- paste0("SELECT table_schema, table_name
     FROM information_schema.tables
-    WHERE table_name LIKE '%\\_cl\\_network\\_red%' ESCAPE '\\'
+    WHERE table_name LIKE '%cl3%'
       AND table_schema NOT IN ('pg_catalog', 'information_schema');
   ")
 	
