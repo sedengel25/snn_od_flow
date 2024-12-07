@@ -5,16 +5,27 @@ source("./main_functions.R")
 ################################################################################
 # 1. Input data
 ################################################################################
+available_data <- psql1_get_schemas(con)
+available_data
+char_schema <- available_data[2, "schema_name"]
+available_network_cluster_tables <- psql1_get_tables_in_schema(con, char_schema)
+available_network_cluster_tables
+char_network_clusters <- available_network_cluster_tables[1, "table_name"]
+sf_network_clusters <- st_read(
+	con,
+	query = paste0("SELECT * FROM ", 
+								 char_schema, 
+								 ".", 
+								 char_network_clusters)
+)
+
+
+
 available_network_tables <- psql1_get_available_networks(con)
 print(available_network_tables)
 char_network <- available_network_tables[2, "table_name"]
 sf_network <- st_read(con, char_network)
 
-
-available_network_cluster_tables <- psql1_get_network_clusters(con)
-print(available_network_cluster_tables)
-char_network_clusters <- available_network_cluster_tables[1, "table_name"]
-sf_network_clusters <- st_read(con, char_network_clusters)
 
 
 
@@ -33,27 +44,29 @@ sf_nb <- st_as_sf(
 
 sf_nb <- st_transform(sf_nb, crs = 32632)
 
-st_write(sf_nb, con, "sf_nb")
 
 
 
+# Write rds-file data as psql-table to database
 char_nb_timestamp_data <- "nb_timestamp_data"
+st_write(sf_nb, con, char_nb_timestamp_data, delete_layer = TRUE)
 
-query <- paste0("DROP TABLE IF EXISTS ",  char_network,"_convex_hull")
+# Create convex hull for network...
+query <- paste0("DROP TABLE IF EXISTS ",  char_schema, ".", char_network,"_convex_hull")
 dbExecute(con, query)
-
-# Create convex hul for network...
-query <- paste0("CREATE TABLE ", char_network, "_convex_hull AS
+print(char_network_clusters)
+query <- paste0("CREATE TABLE ", char_schema, ".", char_network, "_convex_hull AS
 SELECT ST_Transform(ST_ConvexHull(ST_Union(geom_way)), 32632) AS geom_convex_hull
-FROM ", char_network_clusters,";")
+FROM ", char_schema, ".", char_network_clusters,";")
 dbExecute(con, query)
 
 # ...update the geometry...
-query <- paste0("UPDATE ", char_network,"_convex_hull
+query <- paste0("UPDATE ",  char_schema, ".", char_network,"_convex_hull
 SET geom_convex_hull = ST_SetSRID(geom_convex_hull, 32632)
 WHERE ST_SRID(geom_convex_hull) = 0;")
+cat(query)
 dbExecute(con, query)
-st_write(sf_nb, con, char_nb_timestamp_data, delete_layer = TRUE)
+
 
 #... and filter which points are within the convex_hull
 query <- paste0("DROP TABLE IF EXISTS ",  char_nb_timestamp_data, "_filtered;")
@@ -62,16 +75,17 @@ dbExecute(con, query)
 query <- paste0("CREATE TABLE ", char_nb_timestamp_data, "_filtered AS
     SELECT * FROM ", char_nb_timestamp_data, " WHERE ST_Within(
         geometry,
-        (SELECT geom_convex_hull FROM ", char_network, "_convex_hull)
+        (SELECT geom_convex_hull FROM ",  char_schema, ".", 
+        char_network, "_convex_hull)
     );
 ")
 dbExecute(con, query)
 
 
 psql1_create_spatial_index(con, paste0(char_nb_timestamp_data, "_filtered"))
+psql1_create_spatial_index(con, paste0(char_schema, ".", char_network_clusters))
 
-
-
+### Find a way to make much shorter names such that 'psql1_create_spatial_index' works every time!!!
 query <- paste0("SELECT ",
 								char_nb_timestamp_data, "_filtered.*,
 								n.id AS id_edge, 

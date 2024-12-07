@@ -347,6 +347,7 @@ psql1_get_available_networks <- function(con) {
   FROM information_schema.tables
   WHERE table_name LIKE '%2po_4pgr%'
   	AND table_name NOT LIKE '%dist%'
+  	AND table_name NOT LIKE '%convex_hull%'
     AND table_type = 'BASE TABLE'
     AND table_schema NOT IN ('pg_catalog', 'information_schema');
   ")
@@ -382,18 +383,37 @@ psql1_get_mapped_trip_data <- function(con) {
 	return(available_trip_data)
 }
 
+psql1_get_schemas <- function(con) {
+	query <- paste0("SELECT schema_name
+FROM information_schema.schemata
+WHERE schema_name NOT IN ('public', 'pg_catalog', 'information_schema')
+  AND schema_name NOT LIKE 'pg_toast%'
+  AND schema_name NOT LIKE 'pg_temp%';")
+	
+	char_availabe_schemas <- dbGetQuery(con, query)
+	return(char_availabe_schemas)
+}
 
-psql1_get_cluster_tables <- function(con) {
-	query <- paste0("SELECT table_schema, table_name
-  FROM information_schema.tables
-  WHERE table_name LIKE '%cl%'
+
+
+psql1_get_tables_in_schema <- function(con, schema) {
+	# Query mit Platzhalter für das Schema
+	query <- paste0("
+    SELECT table_schema, table_name
+    FROM information_schema.tables
+    WHERE table_name NOT LIKE '%convex%' 
     AND table_type = 'BASE TABLE'
-    AND table_schema NOT IN ('pg_catalog', 'information_schema');
+      AND table_schema = '", schema, "';
   ")
 	
+	# Abfrage ausführen
 	char_availabe_cluster_tables <- dbGetQuery(con, query)
+	
+	# Ergebnis zurückgeben
 	return(char_availabe_cluster_tables)
 }
+
+
 
 psql1_get_point_cluster_tables <- function(con) {
 	query <- paste0("SELECT table_schema, table_name

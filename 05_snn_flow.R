@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[2, "table_name"]
+char_network <- available_networks[3, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
@@ -42,12 +42,12 @@ sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 1500
+dist_filter <- 3000
 sf_trips <- sf_trips %>%
 	filter(trip_distance >= dist_filter)
 
 
-int_kw <- c(3,4,5,6,7)
+int_kw <- c(2)
 # if(char_prefix_data == "sr"){
 # 	sf_trips <- sf_trips %>%
 # 		filter(trip_distance > 2000)
@@ -144,18 +144,24 @@ ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
 	theme_minimal()
 
 
-st_write(sf_cluster_nd_pred, con, paste0(char_data, 
-																					 "_kw_",
-																					 paste0(int_kw, collapse = "_"),
-																					 "_f", 
-																					 dist_filter, 
-																					 "_p",
-																					 int_k,
-																					 "_",
-																					 int_eps,
-																					 "_",
-																					 int_minpts,
-																					 "_cl"))
+char_schema <- paste0(char_data, 
+											"_kw_",
+											paste0(int_kw, collapse = "_"),
+											"_min", 
+											dist_filter,
+											"m")
+query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
+cat(query)
+dbExecute(con, query)
+char_table <- paste0("snn1_k",
+										 int_k,
+										 "_eps",
+										 int_eps,
+										 "_minpts",
+										 int_minpts)
 
+
+st_write(sf_cluster_nd_pred, con, Id(schema=char_schema, 
+																					table = char_table))
 
 

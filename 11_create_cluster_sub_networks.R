@@ -4,9 +4,22 @@ source("./main_functions.R")
 ################################################################################
 # Input
 ################################################################################
-available_tables <- psql1_get_point_cluster_tables(con)
-char_data <- available_tables[1, "table_name"]
-sf_cluster_points <- st_read(con, char_data)
+available_data <- psql1_get_schemas(con)
+available_data
+char_schema <- available_data[2, "schema_name"]
+availabe_cluster_tables <- psql1_get_tables_in_schema(con, char_schema)
+availabe_cluster_tables
+char_data <- availabe_cluster_tables[1, "table_name"]
+
+
+sf_cluster_points <- st_read(
+	con,
+	query = paste0("SELECT * FROM ", 
+								 char_schema, 
+								 ".", 
+								 char_data)
+)
+
 sf_cluster_points <- sf_cluster_points %>%
 	as.data.table() %>%
 	filter(cluster_pred!=0)
@@ -121,12 +134,18 @@ sf_edges <- sf_edges %>%
 	st_as_sf()
 
 
-char_data
-st_write(sf_edges, con, paste0(char_data, "cl3"))
+
+st_write(sf_edges, con, Id(schema=char_schema, 
+																				table = "cluster_sub_networks"))
 
 
+# g <- graph_from_data_frame(d = df_edges,
+# 													 directed = FALSE)
+# comp <- components(g)
+# comp$no
+# 
+# 
+# Sys.time()
+# timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+print(timestamp)
 
-g <- graph_from_data_frame(d = df_edges,
-													 directed = FALSE)
-comp <- components(g)
-comp$no

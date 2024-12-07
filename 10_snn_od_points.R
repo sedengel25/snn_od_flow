@@ -4,10 +4,18 @@ source("./main_functions.R")
 ################################################################################
 # Input files
 ################################################################################
-availabe_cluster_tables <- psql1_get_cluster_tables(con)
-print(availabe_cluster_tables)
-char_data <- availabe_cluster_tables[3, "table_name"]
+available_data <- psql1_get_schemas(con)
+char_schema <- available_data[2, "schema_name"]
+availabe_cluster_tables <- psql1_get_tables_in_schema(con, char_schema)
+char_data <- availabe_cluster_tables[1, "table_name"]
 
+sf_old_cluster_points <- st_read(
+	con,
+	query = paste0("SELECT * FROM ", 
+		char_schema, 
+		".", 
+		char_data)
+)
 
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
@@ -32,7 +40,6 @@ dt_dist_mat <- read_rds(here::here(
 ################################################################################
 # Clean points of OD-flow clusters
 ################################################################################
-sf_old_cluster_points <- st_read(con, char_data)
 sf_old_cluster_points <- sf_old_cluster_points %>%
 	filter(cluster_pred!=0)
 sf_old_cluster_points_origin <- sf_old_cluster_points %>%
@@ -116,7 +123,13 @@ table(dt_snn_pred_nd$cluster_pred)
 
 sf_new_cluster_points <- sf_old_cluster_points_cleaned %>%
 	left_join(dt_snn_pred_nd, by = c("id" = "id"))
-char_data
-char_new_cluster_points <- paste0(
-	char_data, "_p2_", int_k, "_", int_eps, "_", int_minpts, "_cl2")
-st_write(sf_new_cluster_points, con, char_new_cluster_points, delete_layer = TRUE)
+
+char_table <- paste0("snn2_k",
+										 int_k,
+										 "_eps",
+										 int_eps,
+										 "_minpts",
+										 int_minpts)
+
+st_write(sf_new_cluster_points, con, Id(schema=char_schema, 
+																			 table = char_table))
