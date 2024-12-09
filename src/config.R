@@ -46,6 +46,8 @@ library(sfnetworks)
 library(tidygraph)
 library(purrr)
 library(concaveman)
+library(pbmcapply)
+library(progressr)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

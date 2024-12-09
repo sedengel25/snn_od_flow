@@ -63,7 +63,7 @@ sf_network <- st_read(con, char_network)
 path <- "/home/sebastiandengel/dx/Dresden/"
 folders <- list.dirs(path, recursive = FALSE)
 
-
+folders <- folders[1:14]
 # Create convex hull for network...
 query <- paste0("DROP TABLE IF EXISTS ",  char_schema, ".", char_network,"_convex_hull")
 dbExecute(con, query)
@@ -87,7 +87,7 @@ psql1_create_spatial_index(con,
 query <- "DROP TABLE IF EXISTS temp_nb_timestamp_data;"
 dbExecute(con, query)
 query <- paste0("
-  CREATE TEMP TABLE temp_nb_timestamp_data (
+  CREATE TABLE temp_nb_timestamp_data (
   	time_stamp TIMESTAMP,
     lng DOUBLE PRECISION,
     lat DOUBLE PRECISION,
@@ -99,7 +99,7 @@ dbExecute(con, query)
 query <- "DROP TABLE IF EXISTS temp_nb_timestamp_data_filtered;"
 dbExecute(con, query)
 query <- paste0("
-  CREATE TEMP TABLE temp_nb_timestamp_data_filtered (
+  CREATE TABLE temp_nb_timestamp_data_filtered (
     time_stamp TIMESTAMP,
     lng DOUBLE PRECISION,
     lat DOUBLE PRECISION,
@@ -214,6 +214,10 @@ process_files <- function(folder) {
 }
 
 
+t1 <- proc.time()
+pbmclapply(folders, process_files, mc.cores = 14)
+t2 <- proc.time()
+
+print(t2-t1)
 
 
-mclapply(folders, process_files, mc.cores = 1)
