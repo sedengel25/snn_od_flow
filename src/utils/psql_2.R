@@ -5,16 +5,21 @@
 # Returns: ...
 # Output: ...
 # Action: Execute psql-query 
-psql2_get_name_of_geom_col <- function(con, table) {
-	query <- paste0("SELECT column_name
-  FROM information_schema.columns
-  WHERE table_schema = 'public' AND table_name = '",
-									table,
-									"' AND udt_name = 'geometry';")
-	
+psql2_get_name_of_geom_col <- function(con, table, schema) {
+# 	query <- paste0("SELECT column_name
+#   FROM information_schema.columns
+#   WHERE table_name = '",
+# 									table,
+# 									"' AND udt_name = 'geometry';")
+# 	
+	query <- paste0("SELECT f_geometry_column as name
+	FROM geometry_columns
+	WHERE f_table_schema = '", schema, "' 
+	  AND f_table_name = '", table, "';")
 	col_name_df <- dbGetQuery(con, query) 
 	
-	col_name_vec <- paste0(as.character(col_name_df$column_name), collapse = ", ")
+	col_name_vec <- paste0(as.character(col_name_df$name), collapse = ", ")
+
 	return(col_name_vec)
 }
 
