@@ -922,4 +922,105 @@ snn_flow_opt <- function(sf_trips, k, eps, minpts, dt_flow_distance) {
 
 
 
-
+main_map_od_points_on_cluster_networks <- function(files) {
+	con <- dbConnect(RPostgres::Postgres(),
+									 dbname = dbname,
+									 host = host,
+									 user = user,
+									 password = pw,
+									 port = port,
+									 options = "-c client_min_messages=warning")
+	
+	on.exit(dbDisconnect(con))
+	processed_files <- list()
+	
+	for (file in files) {
+		temp_table_data <- paste0("temp_nb_timestamp_data_", gsub("[^a-zA-Z0-9]", "_", basename(file)))
+		temp_table_filtered <- paste0("temp_nb_timestamp_data_filtered_", gsub("[^a-zA-Z0-9]", "_", basename(file)))
+		
+		# Erstelle eindeutige temporäre Tabellen
+		query <- paste0("DROP TABLE IF EXISTS ", temp_table_data, ";")
+		dbExecute(con, query)
+		query <- paste0("
+            CREATE TEMP TABLE ", temp_table_data, " (
+                time_stamp TIMESTAMP,
+                lng DOUBLE PRECISION,
+                lat DOUBLE PRECISION,
+                geometry GEOMETRY(POINT, 32632)
+            );
+        ")
+		dbExecute(con, query)
+		
+		query <- paste0("DROP TABLE IF EXISTS ", temp_table_filtered, ";")
+		dbExecute(con, query)
+		query <- paste0("
+            CREATE TEMP TABLE ", temp_table_filtered, " (
+                time_stamp TIMESTAMP,
+                lng DOUBLE PRECISION,
+                lat DOUBLE PRECISION,
+                geometry GEOMETRY(POINT, 32632)
+            );
+        ")
+		dbExecute(con, query)
+		
+		# Prozessiere Dateien
+		dt_nb <- read_rds(here::here(file)) %>% as.data.table
+		posixct_ts <- dt_nb[1, "time_stamp"]
+		dt_nb <- dt_nb[, .(time_stamp, lat, lng)]
+		processed_files[[file]] <- posixct_ts
+		
+		sf_nb <- st_as_sf(
+			dt_nb,
+			coords = c("lng", "lat"), 
+			crs = 4326,               
+			remove = FALSE
+		)
+		sf_nb <- st_transform(sf_nb, crs = 32632)
+		
+		# Schreibe Daten in die eindeutige temporäre Tabelle
+		dbWriteTable(con, temp_table_data, sf_nb, append = TRUE, row.names = FALSE)
+		
+		# Filtere Punkte innerhalb der convex_hull
+		query <- paste0("
+            INSERT INTO ", temp_table_filtered, "
+            SELECT * FROM ", temp_table_data, "
+            WHERE ST_Within(
+                geometry,
+                (SELECT geom_convex_hull FROM ", char_schema, ".", char_network, "_convex_hull)
+            );
+        ")
+		dbExecute(con, query)
+		
+		# Füge einen räumlichen Index zur gefilterten Tabelle hinzu
+		query <- paste0("CREATE INDEX ON ", temp_table_filtered, " USING GIST (geometry);")
+		dbExecute(con, query)
+		
+		# Schreibe Ergebnisse in die time_series Tabelle
+		query <- paste0("
+            INSERT INTO ", char_schema, ".time_series (timestamp, cluster, count)
+            SELECT 
+                time_stamp AS timestamp, 
+                n.cluster_pred AS cluster,
+                COUNT(*) AS count
+            FROM ", temp_table_filtered, "
+            CROSS JOIN LATERAL (
+                SELECT
+                    id,
+                    cluster_pred,
+                    geom_way
+                FROM ", char_schema, ".", char_network_clusters, " AS n
+                ORDER BY
+                    geom_way <-> ", temp_table_filtered, ".geometry
+                LIMIT 1
+            ) AS n
+            GROUP BY time_stamp, n.cluster_pred;
+        ")
+		dbExecute(con, query)
+		
+		# Lösche temporäre Tabellen
+		dbExecute(con, paste0("DROP TABLE IF EXISTS ", temp_table_data, ";"))
+		dbExecute(con, paste0("DROP TABLE IF EXISTS ", temp_table_filtered, ";"))
+	}
+	
+	return(processed_files)
+}
