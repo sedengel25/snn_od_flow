@@ -45,8 +45,34 @@ osm2po_create_routable_network(int_crs = 32632)
 sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
+ncol(sf_network)
 
-int_buffer <- 2000
+sfn_network <- as_sfnetwork(sf_network)
+
+sfn_network <- sfn_network %>%
+	activate(nodes) %>%
+	mutate(node_id = row_number(), component = group_components()) 
+
+sfn_network_biggest_comp <- sfn_network %>%
+	activate(nodes) %>%
+	filter(component == 1) 
+
+igraph_network <- as.igraph(sfn_network_biggest_comp)
+components(igraph_network)
+
+sf_network <- sfn_network_biggest_comp %>%
+	activate(edges) %>%
+	as.data.frame() %>%
+	st_as_sf()
+
+sf_network <- sf_network %>%
+	select(-c(from, to))
+st_write(sf_network, con, char_network)
+
+ncol(sf_network)
+
+
+int_buffer <- 50000
 
 dt_dist_mat <- calc_local_node_dist_mat(buffer = int_buffer)
 

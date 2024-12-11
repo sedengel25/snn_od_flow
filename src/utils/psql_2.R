@@ -32,10 +32,10 @@ psql2_get_name_of_geom_col <- function(con, table, schema) {
 # Returns: ...
 # Output: ...
 # Action: Execute psql-query 
-psql2_get_geometry_type <- function(con, table) {
-	name_geom_col <- psql2_get_name_of_geom_col(con, table)
+psql2_get_geometry_type <- function(con, table, schema) {
+	name_geom_col <- psql2_get_name_of_geom_col(con, table, schema)
 	query <- paste0("SELECT DISTINCT GeometryType(",
-									name_geom_col, ")FROM ", table, ";")
+									name_geom_col, ")FROM ", schema, ".", table, ";")
 	
 	geom_types <- dbGetQuery(con, query) %>% as.character()
 	return(geom_types)

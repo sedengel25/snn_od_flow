@@ -105,12 +105,12 @@ osm2po_create_routable_network <- function(int_crs) {
 	
 	
 	# Transform coordinate system
-	srid <- psql1_get_srid(con, table = char_network)
+	srid <- psql1_get_srid(con, table = char_network, "public")
 	cat("SRID: ", srid, "\n")
-	psql1_set_srid(con, table = char_network, srid)
-	psql1_transform_coordinates(con, table = char_network, crs = int_crs)
-	psql1_update_srid(con, table = char_network, crs = int_crs)
-	psql1_create_spatial_index(con, table = char_network)
+	psql1_set_srid(con, table = char_network, srid, "public")
+	psql1_transform_coordinates(con, table = char_network, crs = int_crs, "public")
+	psql1_update_srid(con, table = char_network, crs = int_crs, "public")
+	psql1_create_spatial_index(con, table = char_network, schema = "public")
 }
 
 
@@ -707,7 +707,7 @@ reduce_networks_to_op <- function(sf_cluster_networks,
 		
 		# From all outer edges, find the ones that were newly created by the blending...
 		new_outer_edges <- all_outer_edges %>%
-			dplyr::anti_join(network_cl_edges, by = c("from", "to"))
+			anti_join(network_cl_edges, by = c("from", "to"))
 		
 		
 		# ... and remove them

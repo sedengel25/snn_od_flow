@@ -1,7 +1,7 @@
 ################################################################################
 # Libraries
 ################################################################################
-library(dplyr)
+
 library(here)
 library(processx)
 library(yaml)
@@ -40,14 +40,16 @@ library(tidyr)
 library(prettymapr)
 library(ggspatial)
 library(leaflet)
+library(leaflet.extras)
 library(reshape2)
 library(osmdata)
 library(sfnetworks)
 library(tidygraph)
 library(purrr)
 library(concaveman)
-library(pbmcapply)
-library(progressr)
+#library(MASS)
+library(bigmds)
+library(dplyr)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

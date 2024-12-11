@@ -16,7 +16,7 @@ ggplot() +
 
 available_raw_trip_data <- psql1_get_raw_trip_data(con)
 print(available_raw_trip_data)
-char_data <- available_raw_trip_data[2, "table_name"]
+char_data <- available_raw_trip_data[3, "table_name"]
 df_trips <- st_read(con, char_data) 
 sf_trips <- df_trips 
 
@@ -79,8 +79,8 @@ if(char_area != "complete"){
 st_write(sf_trips, con, char_data, delete_layer = TRUE)
 
 
-psql1_create_spatial_index(con, char_data)
-psql1_create_spatial_index(con, char_network)
+psql1_create_spatial_index(con, char_data, "public")
+psql1_create_spatial_index(con, char_network, "public")
 
 int_crs <- 32632
 

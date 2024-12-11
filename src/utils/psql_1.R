@@ -6,8 +6,8 @@ source("./src/utils/psql_2.R")
 # Returns: ...
 # Output: ...
 # Action: Execute psql-query 
-psql1_get_srid <- function(con, table) {
-	name_geom_col <- psql2_get_name_of_geom_col(con, table)
+psql1_get_srid <- function(con, table, schema) {
+	name_geom_col <- psql2_get_name_of_geom_col(con, table, schema)
 	query <- paste0("SELECT ST_SRID(", name_geom_col, ") FROM ", table, " LIMIT 1;")
 	srid <- dbGetQuery(con, query) %>% as.integer
 	return(srid)
@@ -21,8 +21,8 @@ psql1_get_srid <- function(con, table) {
 # Returns: ...
 # Output: ...
 # Action: Execute psql-query 
-psql1_set_srid <- function(con, table, srid) {
-	name_geom_col <- psql2_get_name_of_geom_col(con, table)
+psql1_set_srid <- function(con, table, srid, schema) {
+	name_geom_col <- psql2_get_name_of_geom_col(con, table, schema)
 	query <- paste0("UPDATE ",
 									table,
 									" SET ",
@@ -44,8 +44,8 @@ psql1_set_srid <- function(con, table, srid) {
 # Returns: ...
 # Output: ...
 # Action: Executing a psql-query
-psql1_update_srid <- function(con, table, crs) {
-	name_geom_col <- psql2_get_name_of_geom_col(con, table)
+psql1_update_srid <- function(con, table, crs, schema) {
+	name_geom_col <- psql2_get_name_of_geom_col(con, table, schema)
 	query <- paste0("SELECT UpdateGeometrySRID('",
 									table,
 									"','",
@@ -63,10 +63,10 @@ psql1_update_srid <- function(con, table, crs) {
 # Returns: ...
 # Output: ...
 # Action: Execute psql-query
-psql1_transform_coordinates <- function(con, table, crs) {
+psql1_transform_coordinates <- function(con, table, crs, schema) {
 	
-	name_geom_col <- psql2_get_name_of_geom_col(con, table)
-	type_geom_col <- psql2_get_geometry_type(con, table)
+	name_geom_col <- psql2_get_name_of_geom_col(con, table, schema)
+	type_geom_col <- psql2_get_geometry_type(con, table, schema)
 	query <- paste0("ALTER TABLE ", 
 									table, 
 									" ALTER COLUMN ",

@@ -7,18 +7,20 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[3, "table_name"]
+char_network <- available_networks[2, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
 	geom_sf(data=sf_network) 
 
+as_sfnetwork(sf_network)
+
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
-char_buffer <- "2000"
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[20]
+char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
 	char_dt_dist_mat))
@@ -40,20 +42,24 @@ sf_trips <- st_read(con, char_data) %>%
 char_data <- substr(char_data, 1, nchar(char_data) - 7)
 sf_trips$month <- lubridate::month(sf_trips$start_datetime)
 sf_trips$week <- lubridate::week(sf_trips$start_datetime)
+sf_trips$hour <- lubridate::hour(sf_trips$start_datetime)
+sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 3000
-sf_trips <- sf_trips %>%
+dist_filter <- 2000
+int_kw <- c(8:10)
+sf_trips_sub <- sf_trips %>%
+	filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter)
+nrow(sf_trips_sub)
+rm(sf_trips)
+gc()
 
-
-int_kw <- c(2)
 # if(char_prefix_data == "sr"){
 # 	sf_trips <- sf_trips %>%
 # 		filter(trip_distance > 2000)
 # } else if(char_prefix_data == "nb"){
-sf_trips <- sf_trips %>%
-	filter(week %in% int_kw)
+
 # } else if(char_prefix_data == "comb"){
 # 	sf_trips_sr <- sf_trips %>%
 # 		filter(source == "sr" & trip_distance > 2000) 
@@ -67,9 +73,9 @@ sf_trips <- sf_trips %>%
 
 
 
-sf_trips$flow_id <- 1:nrow(sf_trips)
+sf_trips_sub$flow_id <- 1:nrow(sf_trips_sub)
 
-sf_trips <- sf_trips %>% mutate(origin_id = as.integer(origin_id),
+sf_trips_sub <- sf_trips_sub %>% mutate(origin_id = as.integer(origin_id),
 																dest_id = as.integer(dest_id))
 
 
@@ -80,7 +86,7 @@ t_start <- proc.time()
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
-dt_pts_nd <- main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
+dt_pts_nd <- main_calc_flow_nd_dist_mat(sf_trips_sub, dt_network, dt_dist_mat)
 dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
 dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
 
@@ -110,11 +116,69 @@ dt_flow_nd <- dt_flow_nd %>%
 	rename(from = flow_m,
 				 to = flow_n)
 
+setindex(dt_flow_nd, from, to)
+
+################################################################################
+# Test MDS
+################################################################################
+n <- nrow(sf_trips_sub)
+matrix_flow_nd <- matrix(0, nrow = n, ncol = n)
+
+
+matrix_flow_nd[dt_flow_nd$from + (dt_flow_nd$to - 1) * n] <- dt_flow_nd$distance
+matrix_flow_nd[dt_flow_nd$to + (dt_flow_nd$from - 1) * n] <- dt_flow_nd$distance
+
+
+# res <- cmdscale(matrix_flow_nd)
+# 
+# df_res <- data.frame(
+# 	x = res[, 1],
+# 	y = res[, 2]
+# )
+
+
+
+
+l <- nrow(sf_trips_sub)       # Klassische MDS-Größe
+r <- 2         # Extrahiere 2 Dimensionen
+s_points <- 1 # Anzahl der Punkte zum Kombinieren (5*r)
+n_cores <- 14   # Anzahl der verwendeten Kerne (abhängig von deinem Rechner)
+
+# Fast MDS ausführen
+res_fast <- fast_mds(matrix_flow_nd, l, s_points, r, n_cores)
+df_res_fast <- data.frame(
+	x = res_fast$points[, 1],
+	y = res_fast$points[, 2]
+)
+# Plot mit ggplot2
+ggplot(df_res_fast, aes(x = x, y = y)) +
+	geom_point(color = "blue", size = 1.5) + # Punkte hinzufügen
+	theme_minimal() + # Minimalistisches Design
+	labs(
+		title = "MDS Plot",
+		x = "x",
+		y = "y"
+	)
+
+
+ggplot(df_res, aes(x = x, y = y)) +
+	geom_point(color = "blue", size = 1.5) + # Punkte hinzufügen
+	theme_minimal() + # Minimalistisches Design
+	labs(
+		title = "MDS Plot",
+		x = "x",
+		y = "y"
+	)
+
+
+################################################################################
+# Algorithm
+################################################################################
 int_k <- 20
 int_eps <- 10
 int_minpts <- 12
 
-dt_snn_pred_nd <- snn_flow(ids = sf_trips$flow_id,
+dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 k = int_k,
 													 eps = int_eps,
 													 minpts = int_minpts,
@@ -128,7 +192,7 @@ gc()
 ################################################################################
 # 4. Postprocess cluster results and write them into PSQL-DB
 ################################################################################
-sf_cluster_nd_pred <- sf_trips %>%
+sf_cluster_nd_pred <- sf_trips_sub %>%
 	left_join(dt_snn_pred_nd, by = c("flow_id" = "id"))
 st_drop_geometry(sf_cluster_nd_pred)
 st_geometry(sf_cluster_nd_pred) <- "line_geom"
