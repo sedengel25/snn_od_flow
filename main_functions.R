@@ -108,7 +108,6 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 	# sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
 	# sf_trips$dest_geom <- lwgeom::st_endpoint(sf_trips$geometry)
 
-	print(head(sf_trips))
 
 
 	dt_origin <- sf_trips %>%
