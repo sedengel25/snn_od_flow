@@ -49,6 +49,7 @@ library(purrr)
 library(concaveman)
 #library(MASS)
 library(bigmds)
+library(viridis)
 library(dplyr)
 ################################################################################
 # Postgresql-DB connection

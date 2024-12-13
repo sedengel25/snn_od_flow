@@ -86,7 +86,10 @@ t_start <- proc.time()
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
+gc()
 dt_pts_nd <- main_calc_flow_nd_dist_mat(sf_trips_sub, dt_network, dt_dist_mat)
+rm(dt_dist_mat)
+gc()
 dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
 dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
 char_buffer
@@ -94,7 +97,7 @@ char_buffer
 
 
 rm(dt_pts_nd)
-
+gc()
 
 dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
 rm(dt_o_pts_nd)
@@ -108,18 +111,30 @@ dt_sym <- rbind(
 	dt_flow_nd,
 	dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
 )
-
-gc()
 rm(dt_flow_nd)
+gc()
+
 dt_flow_nd <- dt_sym
+rm(dt_sym)
+gc()
+
 dt_flow_nd <- dt_flow_nd %>%
 	rename(from = flow_m,
 				 to = flow_n)
+
+
+
+# dbWriteTable(con, substr(char_dt_dist_mat, 
+# 												 start = 1, 
+# 												 stop = nchar(char_dt_dist_mat) - 4),
+# 						 dt_flow_nd)
 
 num_ids <- nrow(sf_trips_sub)
 matrix_flow_nd <- matrix(99999, nrow = num_ids, ncol = num_ids)
 matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
 matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
+gc()
+
 ################################################################################
 # Test MDS
 ################################################################################
@@ -176,9 +191,9 @@ matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
 ################################################################################
 # Algorithm
 ################################################################################
-int_k <- 20
-int_eps <- 10
-int_minpts <- 12
+int_k <- 40
+int_eps <- 20
+int_minpts <- 22
 
 dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 k = int_k,
@@ -187,6 +202,7 @@ dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 dt_flow_distance = dt_flow_nd)
 
 rm(dt_flow_nd)
+gc()
 t_end<- proc.time()
 print(t_end - t_start)
 table(dt_snn_pred_nd$cluster_pred)
@@ -196,17 +212,17 @@ gc()
 ################################################################################
 # 4. Postprocess cluster results and write them into PSQL-DB
 ################################################################################
-sf_cluster_nd_pred <- sf_trips_sub %>%
+sf_snn <- sf_trips_sub %>%
 	left_join(dt_snn_pred_nd, by = c("flow_id" = "id"))
-st_drop_geometry(sf_cluster_nd_pred)
-st_geometry(sf_cluster_nd_pred) <- "line_geom"
-sf_cluster_nd_pred <- sf_cluster_nd_pred %>%
+st_drop_geometry(sf_snn)
+st_geometry(sf_snn) <- "line_geom"
+sf_snn <- sf_snn %>%
 	select(-origin_geom, -dest_geom, -o_closest_point, -d_closest_point)
 
 
 
 
-ggplot(data = sf_cluster_nd_pred[sf_cluster_nd_pred$cluster_pred!=0,]) +
+ggplot(data = sf_snn[sf_snn$cluster_pred!=0,]) +
 	geom_sf(data=sf_network) +
 	geom_sf(aes(color = as.character(cluster_pred)), size = 1) +
 	theme_minimal()
@@ -232,7 +248,7 @@ char_table <- paste0("snn1_k",
 										 int_minpts)
 
 
-st_write(sf_cluster_nd_pred, con, Id(schema=char_schema, 
+st_write(sf_snn, con, Id(schema=char_schema, 
 																					table = char_table))
 
 ################################################################################
@@ -290,6 +306,7 @@ int_eps <- 500
 dbscan_res <- dbscan::dbscan(x = as.dist(matrix_flow_nd),
 														 eps = int_eps,
 														 minPts = int_minpts)
+gc()
 sf_dbscan <- data.frame(
 	cluster_pred = dbscan_res$cluster,
 	line_geom = sf_trips_sub$line_geom) %>%
@@ -308,12 +325,55 @@ st_write(sf_dbscan, con, Id(schema=char_schema,
 ################################################################################
 # 7. optics
 ################################################################################
+gc()
 optics_res <- dbscan::optics(x = as.dist(matrix_flow_nd),
-														 eps = 5000,
+														 eps = max(matrix_flow_nd),
 														 minPts = 10)
+gc()
 plot(optics_res)
 int_epscl <- 600
 optics_res_cluster <- extractDBSCAN(optics_res, eps_cl = int_epscl)
+
+# reachability <- optics_res$reachdist[optics_res$order]
+# clusters <- optics_res_cluster$cluster[optics_res$order]
+# plot(reachability, col = clusters + 1, pch = 20)
+
+
+df_reach_plot_optics <- data.frame(
+	order = seq_along(optics_res$order),
+	reachability = optics_res$reachdist[optics_res$order],
+	cluster = as.factor(optics_res_cluster$cluster[optics_res$order])
+)
+
+
+df_reach_plot_snn <- data.frame(
+	order = seq_along(optics_res$order),
+	reachability = optics_res$reachdist[optics_res$order],
+	cluster = as.factor(sf_snn$cluster_pred[optics_res$order])
+)
+
+valid_colors <- colors()[!grepl("black|gray|grey", colors(), ignore.case = TRUE)]
+random_colors <- setNames(
+	c("black", sample(valid_colors, length(unique_clusters) - 1)),  # Verwende gefilterte Farben
+	unique_clusters
+)
+
+
+ggplot(df_reach_plot_snn[1:3000,], aes(x = order, y = reachability, fill = cluster)) +
+	geom_bar(stat = "identity", width = 1) +
+	scale_fill_manual(values = random_colors) +
+	theme_minimal() +
+	theme(legend.position = "none") +
+	labs(title = "Reachability Plot", 
+			 x = "Data Points (Ordering)", 
+			 y = "Reachability Distance",
+			 fill = "Cluster")
+
+
+
+
+
+
 
 sf_optics <- data.frame(
 	cluster_pred = optics_res_cluster$cluster,
@@ -329,7 +389,7 @@ st_write(sf_optics, con, Id(schema=char_schema,
 															"optics_eps_cl",
 															int_epscl)))
 ################################################################################
-# 6. Silhouette Coefficient
+# 8. Silhouette Coefficient
 ################################################################################
 
 get_sil_df <- function(cluster, matrix_flow_nd) {
