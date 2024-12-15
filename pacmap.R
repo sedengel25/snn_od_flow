@@ -31,7 +31,6 @@ dt_dist_mat <- dt_dist_mat %>%
 	mutate(m = round(m, 0) %>% as.integer())
 
 
-
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 print(available_mapped_trip_data)
 char_data <- available_mapped_trip_data[2, "table_name"]
@@ -138,13 +137,13 @@ gc()
 
 
 ################################################################################
-# pacmap-git
+# 4. PaCMAP
 ################################################################################
 reticulate::use_virtualenv("r-reticulate", required = TRUE)
 np <- reticulate::import("numpy")
 char_project_dir <- "/home/sebastiandengel/PaCMAP_JS/source/pacmap"
-np_matrix_flow_nd <- np$array(matrix_flow_nd)
-np$save(paste0(char_project_dir, "/nd_mat.npy"))
+# np_matrix_flow_nd <- np$array(matrix_flow_nd)
+# np$save(paste0(char_project_dir, "/nd_mat.npy"))
 py_run_file(paste0(char_project_dir, "/pacmap.py"))
 embedding <- np$load(paste0(char_project_dir, "/embedding.npy")) %>%
 	as.data.frame()
@@ -155,7 +154,7 @@ df_embedding <- data.frame(
 	x = embedding[, 1],
 	y = embedding[, 2]
 )
-
+df_embedding$id <- 1:nrow(df_embedding)
 ggplot(df_embedding, aes(x = x, y = y)) +
 	geom_point(alpha = 0.2) +  
 	stat_density2d(aes(fill =after_stat(level)),
@@ -173,77 +172,62 @@ ggplot(df_embedding, aes(x = x, y = y)) +
 	)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ################################################################################
-# pacmap-conda
+# 5. Add cluster to PaCMAP
 ################################################################################
-reticulate::py_install("pacmap", 
-											 envname = "r-reticulate", 
-											 method = "virtualenv",
-											 pip = TRUE)
-reticulate::use_virtualenv("r-reticulate", required = TRUE)
-pacmap <- reticulate::import("pacmap")
-np <- reticulate::import("numpy")
-pacmap_model <- pacmap$PaCMAP(n_components = as.integer(2), 
-															random_state = as.integer(42))
+av_schemas <- psql1_get_schemas(con)
+char_schema <- av_schemas[2, "schema_name"]
+av_schema_tables <- psql1_get_tables_in_schema(con, char_schema)
+char_data <- av_schema_tables[3, "table_name"]
+
+df_snn <- st_read(
+	con,
+	query = paste0("SELECT * FROM ",
+								 char_schema,
+								 ".",
+								 char_data)
+) %>%
+	as.data.frame()
 
 
-np_matrix_flow_nd <- np$array(matrix_flow_nd)
-
-rm(matrix_flow_nd)
-gc()
-embedding <- pacmap_model$fit_transform(np_matrix_flow_nd)
+if (nrow(df_snn) != nrow(df_embedding)){
+	stop("Embedding and clsuter dataset have different dimensions")
+}
 
 
-df_embedding <- data.frame(
-	x = embedding[, 1],
-	y = embedding[, 2]
+
+
+df_pacmap_plot <- df_embedding %>%
+	left_join(df_snn %>% select(flow_id, cluster_pred),
+						by = c("id" = "flow_id"))
+
+int_clusters <- sort(unique(df_pacmap_plot$cluster_pred))
+
+valid_colors <- colors()[!grepl("black|gray|grey", colors(), ignore.case = TRUE)]
+random_colors <- setNames(
+	c("black", sample(valid_colors, length(int_clusters) - 1)),  # Verwende gefilterte Farben
+	int_clusters
 )
 
-# ggplot(df_embedding, aes(x = x, y = y)) +
-# 	geom_bin2d(bins = 150) +
-# 	scale_fill_viridis(option = "plasma", direction = 1) +  # Kontrastreiche Palette
-# 	theme_minimal() +
-# 	labs(
-# 		title = "Density Map (2D Binning mit Viridis)",
-# 		x = "x",
-# 		y = "y",
-# 		fill = "Density"
-# 	)
 
-
-ggplot(df_embedding, aes(x = x, y = y)) +
-	geom_point(alpha = 0.2) +  # Punkte anzeigen
-	stat_density2d(aes(fill =after_stat(level)), 
-								 geom = "polygon", 
-								 alpha = 0.4,
-								 adjust = 0.1,
-								 n = 300) +  # Farbige Konturen
-	scale_fill_viridis_c(option = "plasma") +  # Farbskala für die Dichte
-	theme_minimal() +
+p <- ggplot(df_pacmap_plot %>%
+			 	filter(cluster_pred != 0), aes(x = x, y = y, color = factor(cluster_pred))) +
+	geom_point(size = 1, alpha = 0.3) +
+	scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
 	labs(
-		title = "PACMAP based on network distance",
+		title = "PaCMAP by Clusters",
 		x = "x",
-		y = "y",
-		fill = "Density"
+		y = "y"
+	) +
+	theme_minimal() +
+	theme(
+		legend.position = "none",
+		plot.title = element_text(hjust = 0.5, size = 16),
+		axis.title = element_text(size = 12)
 	)
+
+
+# Interaktives Plotly-Plot
+ggplotly(p, tooltip = c("x", "y", "color"))
 
 
