@@ -331,7 +331,7 @@ optics_res <- dbscan::optics(x = as.dist(matrix_flow_nd),
 														 minPts = 10)
 gc()
 plot(optics_res)
-int_epscl <- 600
+int_epscl <- 200
 optics_res_cluster <- extractDBSCAN(optics_res, eps_cl = int_epscl)
 
 # reachability <- optics_res$reachdist[optics_res$order]
@@ -374,8 +374,8 @@ ggplot(df_reach_plot_snn[1:3000,], aes(x = order, y = reachability, fill = clust
 
 
 
-
 sf_optics <- data.frame(
+	flow_id = sf_trips_sub$flow_id,
 	cluster_pred = optics_res_cluster$cluster,
 	line_geom = sf_trips_sub$line_geom) %>%
 	st_as_sf()

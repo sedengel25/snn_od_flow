@@ -144,7 +144,7 @@ np <- reticulate::import("numpy")
 char_project_dir <- "/home/sebastiandengel/PaCMAP_JS/source/pacmap"
 # np_matrix_flow_nd <- np$array(matrix_flow_nd)
 # np$save(paste0(char_project_dir, "/nd_mat.npy"))
-py_run_file(paste0(char_project_dir, "/pacmap.py"))
+#py_run_file(paste0(char_project_dir, "/pacmap.py"))
 embedding <- np$load(paste0(char_project_dir, "/embedding.npy")) %>%
 	as.data.frame()
 
@@ -156,12 +156,12 @@ df_embedding <- data.frame(
 )
 df_embedding$id <- 1:nrow(df_embedding)
 ggplot(df_embedding, aes(x = x, y = y)) +
-	geom_point(alpha = 0.2) +  
+	geom_point(alpha = 0.1) +  
 	stat_density2d(aes(fill =after_stat(level)),
 								 geom = "polygon",
 								 alpha = 1,
-								 adjust = 0.125,
-								 n = 200) +
+								 adjust = 0.1,
+								 n = 150) +
 	scale_fill_viridis_c(option = "plasma") +  
 	theme_minimal() +
 	labs(
@@ -176,32 +176,29 @@ ggplot(df_embedding, aes(x = x, y = y)) +
 # 5. Add cluster to PaCMAP
 ################################################################################
 av_schemas <- psql1_get_schemas(con)
-char_schema <- av_schemas[2, "schema_name"]
+char_schema <- av_schemas[4, "schema_name"]
 av_schema_tables <- psql1_get_tables_in_schema(con, char_schema)
-char_data <- av_schema_tables[3, "table_name"]
+char_data <- av_schema_tables[1, "table_name"]
 
-df_snn <- st_read(
+sf_snn <- st_read(
 	con,
 	query = paste0("SELECT * FROM ",
 								 char_schema,
 								 ".",
 								 char_data)
-) %>%
-	as.data.frame()
-
+) 
+df_snn <- sf_snn %>% as.data.frame()
 
 if (nrow(df_snn) != nrow(df_embedding)){
 	stop("Embedding and clsuter dataset have different dimensions")
 }
 
-
-
-
-df_pacmap_plot <- df_embedding %>%
+df_pacmap <- df_embedding %>%
 	left_join(df_snn %>% select(flow_id, cluster_pred),
 						by = c("id" = "flow_id"))
 
-int_clusters <- sort(unique(df_pacmap_plot$cluster_pred))
+
+int_clusters <- sort(unique(df_pacmap$cluster_pred))
 
 valid_colors <- colors()[!grepl("black|gray|grey", colors(), ignore.case = TRUE)]
 random_colors <- setNames(
@@ -210,8 +207,9 @@ random_colors <- setNames(
 )
 
 
-p <- ggplot(df_pacmap_plot %>%
-			 	filter(cluster_pred != 0), aes(x = x, y = y, color = factor(cluster_pred))) +
+p <- ggplot(df_pacmap 
+						%>% filter(cluster_pred != 0)
+			 	, aes(x = x, y = y, color = factor(cluster_pred))) +
 	geom_point(size = 1, alpha = 0.3) +
 	scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
 	labs(
@@ -230,4 +228,87 @@ p <- ggplot(df_pacmap_plot %>%
 # Interaktives Plotly-Plot
 ggplotly(p, tooltip = c("x", "y", "color"))
 
+################################################################################
+# 5. CDBW
+################################################################################
+# df_snn_cdbw <- st_coordinates(sf_snn) %>% as.data.frame()
+# df_snn_cdbw <- df_snn_cdbw %>%
+# 	mutate(row_id = row_number(), .by = L1) %>%   # Zeilen-ID pro Gruppe
+# 	pivot_wider(
+# 		names_from = row_id,
+# 		values_from = c(X, Y),
+# 		names_prefix = ""
+# 	) %>%
+# 	rename(ox = X_1, oy = Y_1, dx = X_2, dy = Y_2) %>%
+# 	as.data.frame() %>%
+# 	rename(flow_id = L1)
+# 
+# df_snn_cdbw$cluster_pred <- df_snn$cluster_pred
+# 
+# cdbv_idx_euclid <- cdbw(x = df_snn_cdbw[,c(2:5)],
+# 												clustering = df_snn_cdbw[,6])
+# cdbv_idx_euclid
+# df_pacmap <- df_embedding %>%
+# 	left_join(df_snn %>% select(flow_id, cluster_pred),
+# 						by = c("id" = "flow_id"))
+# 
+# 
+# cdbv_idx_pacmap <- cdbw(x = df_pacmap[,c(1,2)],
+# 												clustering = df_pacmap[,4])
+# 
+# cdbv_idx_pacmap
 
+################################################################################
+# 6. Clustering of PaCMAP dimension reduced data
+################################################################################
+int_k <- 20
+int_eps <- 10
+int_minpts <- 12
+df_pacmap_snn <- dbscan::sNNclust(df_embedding[,1:2], 
+				 k = int_k,
+				 eps = int_eps,
+				 minPts = int_minpts)
+
+df_pacmap_snn$cluster %>% unique
+
+df_pacmap$cluster_pred_snn_pacmap <- df_pacmap_snn$cluster
+
+p <- ggplot(df_pacmap 
+						%>% filter(cluster_pred_snn_pacmap != 0)
+						, aes(x = x, y = y, color = factor(cluster_pred_snn_pacmap))) +
+	geom_point(size = 1, alpha = 0.3) +
+	scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
+	labs(
+		title = "PaCMAP by Clusters",
+		x = "x",
+		y = "y"
+	) +
+	theme_minimal() +
+	theme(
+		legend.position = "none",
+		plot.title = element_text(hjust = 0.5, size = 16),
+		axis.title = element_text(size = 12)
+	)
+
+
+# Interaktives Plotly-Plot
+ggplotly(p, tooltip = c("x", "y", "color"))
+cdbw(x = df_pacmap[,c(1,2)],
+		 clustering = df_pacmap[,5])
+
+
+
+sf_pacmap_snn <- df_snn %>%
+	left_join(df_pacmap %>% select(id, cluster_pred_snn_pacmap), by = c("flow_id" = "id")) %>%
+	st_as_sf()
+
+char_table <- paste0("pacmap_snn_k",
+										 int_k,
+										 "_eps",
+										 int_eps,
+										 "_minpts",
+										 int_minpts)
+
+
+st_write(sf_pacmap_snn, con, Id(schema=char_schema, 
+												 table = char_table))
