@@ -178,7 +178,7 @@ ggplot(df_embedding, aes(x = x, y = y)) +
 av_schemas <- psql1_get_schemas(con)
 char_schema <- av_schemas[4, "schema_name"]
 av_schema_tables <- psql1_get_tables_in_schema(con, char_schema)
-char_data <- av_schema_tables[1, "table_name"]
+char_data <- av_schema_tables[3, "table_name"]
 
 sf_snn <- st_read(
 	con,
@@ -261,15 +261,15 @@ ggplotly(p, tooltip = c("x", "y", "color"))
 ################################################################################
 # 6. Clustering of PaCMAP dimension reduced data
 ################################################################################
-int_k <- 20
-int_eps <- 10
-int_minpts <- 12
+int_k <- 14
+int_eps <- 7
+int_minpts <- 9
 df_pacmap_snn <- dbscan::sNNclust(df_embedding[,1:2], 
 				 k = int_k,
 				 eps = int_eps,
 				 minPts = int_minpts)
 
-df_pacmap_snn$cluster %>% unique
+df_pacmap_snn$cluster %>% unique %>% length
 
 df_pacmap$cluster_pred_snn_pacmap <- df_pacmap_snn$cluster
 
