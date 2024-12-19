@@ -204,119 +204,201 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 
 
 
+main_calc_flow_euclid_dist_mat <- function(char_schema, char_trips, n, cores){
+	
 
-# Documentation: main_calc_flow_nd_dist_mat
-# Usage: main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
-# Description: Creates a matrix containing the ND between OD flwos depending
-# on the given raod network and the given local node distance matrix
-# Args/Options: sf_trips, dt_network, dt_dist_mat
-# Returns: matrix
-# Output: ...
-# Action: ...
-# main_calc_flow_nd_dist_mat <- function(dt_points, dt_network, dt_dist_mat) {
-# 	
-# 	### 1. Prepare the data ------------------------------------------------------
-# 	# sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
-# 	# sf_trips$dest_geom <- lwgeom::st_endpoint(sf_trips$geometry)
-# 	
-# 	
-# 	
-# 	
-# 	dt_origin <- sf_trips %>%
-# 		st_set_geometry("o_closest_point") %>%
-# 		select(flow_id, origin_id, o_closest_point) %>%
-# 		rename("id" = "flow_id",
-# 					 "id_edge" = "origin_id",
-# 					 "geom" = "o_closest_point") %>%
-# 		as.data.table()
-# 	
-# 
-# 		
-# 	
-# 	# dt_origin <- sf_trips %>%
-# 	# 	st_set_geometry("origin_geom") %>%
-# 	# 	select(flow_id, origin_id, origin_geom) %>%
-# 	# 	rename("id" = "flow_id",
-# 	# 				 "id_edge" = "origin_id",
-# 	# 				 "geom" = "origin_geom") %>%
-# 	# 	as.data.table()
-# 	dt_origin <- add_dist_start_end(dt_origin)
-# 	
-# 	
-# 	
-# 	dt_dest <- sf_trips %>%
-# 		st_set_geometry("d_closest_point") %>%
-# 		select(flow_id, dest_id, d_closest_point) %>%
-# 		rename("id" = "flow_id",
-# 					 "id_edge" = "dest_id",
-# 					 "geom" = "d_closest_point") %>%
-# 		as.data.table
-# 	
-# 	# dt_dest <- sf_trips %>%
-# 	# 	st_set_geometry("dest_geom") %>%
-# 	# 	select(flow_id, dest_id, dest_geom) %>%
-# 	# 	rename("id" = "flow_id",
-# 	# 				 "id_edge" = "dest_id",
-# 	# 				 "geom" = "dest_geom") %>%
-# 	# 	as.data.table
-# 	dt_dest <- add_dist_start_end(dt_dest)
-# 	
-# 	
-# 	
-# 	dt_network <- dt_network %>%
-# 		select(source, target, id, geom_way)
-# 	
-# 	dt_origin <- dt_origin %>%
-# 		arrange(id)
-# 	
-# 	dt_dest <- dt_dest %>%
-# 		arrange(id)
-# 	
-# 	
-# 	### 2. Calc ND between OD flows ----------------------------------------------
-# 	# ND between origin points
-# 	
-# 	dt_o_pts_nd <- parallel_process_networks(dt_origin, 
-# 																					 dt_network,
-# 																					 dt_dist_mat,
-# 																					 int_cores)
-# 	
-# 	
-# 	#print("ND between origin points calculated")
-# 	# ND between dest points
-# 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
-# 																					 dt_network,
-# 																					 dt_dist_mat,
-# 																					 int_cores)
-# 	
-# 	
-# 	#print("ND between dest points calculated")
-# 	# ND between OD flows
-# 	# dt_flow_nd <- dt_o_pts_nd %>%
-# 	# 	inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
-# 	# 	mutate(distance = distance.x + distance.y) %>%
-# 	# 	select(flow_m = from, flow_n = to, distance) %>%
-# 	# 	as.data.table
-# 	# 
-# 	# dt_flow_nd <- dt_flow_nd %>%
-# 	# 	group_by(flow_m) %>%
-# 	# 	mutate(row_id = row_number()) %>%
-# 	# 	ungroup() %>%
-# 	# 	as.data.table
-# 	return(list("dt_o_pts_nd" = dt_o_pts_nd,
-# 							"dt_d_pts_nd" = dt_d_pts_nd))
-# 	### 3. Calc OD-flow ND matrix ------------------------------------------------
-# 	# matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
-# 	# print("matrix conversion successful")
-# 	# sym_mat <- matrix_flow_dist
-# 	# sym_mat[is.na(sym_mat)] <- 0
-# 	# sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
-# 	# sym_mat[sym_mat == 0] <- NA
-# 	# print("symmat successful")
-# 	# 
-# 	# return(sym_mat)
-# }
+	
+	query <- paste0("DROP INDEX IF EXISTS ", paste0(char_schema,
+																									".",
+																									char_trips,
+																									"_origin_geom_idx"))
+	dbExecute(con, query)
 
+
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+									" USING GIST(origin_geom);")
+	dbExecute(con, query)
+
+	query <- paste0("DROP INDEX IF EXISTS ", paste0(char_schema,
+																									".",
+																									char_trips,
+																									"_dest_geom_idx"))
+	dbExecute(con, query)
+
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+									" USING GIST(dest_geom);")
+	dbExecute(con, query)
+
+	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".euclid_dist_origin"))
+	dbExecute(con, query)
+
+
+	query <- paste0("CREATE TABLE ", paste0(char_schema, ".euclid_dist_origin"),
+									" (flow_id_i INTEGER,
+									flow_id_j INTEGER,
+									euclidean_distance INTEGER
+									);")
+	cat(query)
+	dbExecute(con, query)
+
+
+	chunks <- r1_create_chunks(cores = int_cores, n = n)
+	print(chunks)
+	### Calculate euclidean distance between origin points
+	t1 <- proc.time()
+	parallel::mclapply(1:length(chunks), function(i) {
+
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE) 
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+
+		query <- paste0("INSERT INTO ", char_schema, ".euclid_dist_origin
+			(
+	    flow_id_i,
+	    flow_id_j,
+	    euclidean_distance
+			)
+			SELECT
+			a.flow_id AS flow_id_i,
+			b.flow_id AS flow_id_j,
+			CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) AS
+			euclidean_distance
+			FROM ", paste0(char_schema, ".", char_trips)," a
+			JOIN ", paste0(char_schema, ".", char_trips), " b
+			ON
+			a.flow_id < b.flow_id
+			WHERE
+			a.flow_id BETWEEN ", id_start, " AND ", id_end, ";")
+		dbExecute(local_con, query)
+	}, mc.cores = cores)
+
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating euclid. distances between ", n, "origin points: ",
+			diff_time, "\n")
+
+	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".euclid_dist_dest"))
+	dbExecute(con, query)
+
+
+	query <- paste0("CREATE TABLE ", paste0(char_schema, ".euclid_dist_dest"),
+									" (flow_id_i INTEGER,
+									flow_id_j INTEGER,
+									euclidean_distance INTEGER
+									);")
+	cat(query)
+	dbExecute(con, query)
+
+
+	### Calculate euclidean distance between destination points
+	t1 <- proc.time()
+	print(chunks)
+	parallel::mclapply(1:length(chunks), function(i) {
+
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+		on.exit(dbDisconnect(local_con), add = TRUE) 
+		query <- paste0("INSERT INTO ", char_schema, ".euclid_dist_dest
+			(
+	    flow_id_i,
+	    flow_id_j,
+	    euclidean_distance
+			)
+			SELECT
+			a.flow_id AS flow_id_i,
+			b.flow_id AS flow_id_j,
+			CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER) AS
+			euclidean_distance
+			FROM ", paste0(char_schema, ".", char_trips)," a
+			JOIN ", paste0(char_schema, ".", char_trips), " b
+			ON
+			a.flow_id < b.flow_id
+			WHERE
+			a.flow_id BETWEEN ", id_start, " AND ", id_end, ";")
+		#cat(query)
+		dbExecute(local_con, query)
+	}, mc.cores = cores)
+
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating euclid. distances between ", n, "dest points: ",
+			diff_time, "\n")
+	
+	
+	query <- paste0("CREATE INDEX ON ",
+											char_schema, ".euclid_dist_origin (flow_id_i, flow_id_j);")
+	cat(query)
+	dbExecute(con, query)
+	query <- paste0("CREATE INDEX ON ",
+								 char_schema, ".euclid_dist_dest (flow_id_i, flow_id_j);")
+	cat(query)
+	dbExecute(con, query)
+	query <- paste0("DROP TABLE IF EXISTS ", 
+									paste0(char_schema, ".euclid_dist_sum"))
+	cat(query)
+	dbExecute(con, query)
+	
+	
+	query <- paste0("CREATE TABLE ", paste0(char_schema, ".euclid_dist_sum"),
+									" (flow_id_i INTEGER,
+									flow_id_j INTEGER,
+									euclidean_distance INTEGER
+									);")
+	cat(query)
+	dbExecute(con, query)
+	t1 <- proc.time()
+	print(chunks)
+	parallel::mclapply(1:length(chunks), function(i) {
+		
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE) 
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+		query <- paste0("INSERT INTO ", char_schema, ".euclid_dist_sum
+			(
+	    flow_id_i,
+	    flow_id_j,
+	    euclidean_distance
+			)
+			SELECT 
+			    o.flow_id_i as flow_id_i,
+			    o.flow_id_j as flow_id_j,
+			    o.euclidean_distance + d.euclidean_distance AS euclidean_distance
+			FROM 
+			    ", char_schema, ".euclid_dist_origin o
+			JOIN 
+			    ", char_schema, ".euclid_dist_dest d
+			ON 
+			    o.flow_id_i = d.flow_id_i AND o.flow_id_j = d.flow_id_j
+			WHERE o.flow_id_i BETWEEN ", id_start, " AND ", id_end, ";")
+		dbExecute(local_con, query)
+	}, mc.cores = cores)
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for adding OD_pts distances ", diff_time, "\n")
+	
+}
 
 # Documentation: main_calc_flow_euclid_dist_mat
 # Usage: main_calc_flow_euclid_dist_mat(sf_trips)
@@ -326,55 +408,96 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 # Returns: matrix
 # Output: ...
 # Action: ...
-# main_calc_flow_euclid_dist_mat <- function(sf_org) {
-# 	sf_org$origin <- lwgeom::st_startpoint(sf_org$geometry)
-# 	sf_org$dest <- lwgeom::st_endpoint(sf_org$geometry)
-# 	sf_origin_distances <- st_distance(sf_org$origin, by_element = FALSE)
-# 	sf_dest_distances <- st_distance(sf_org$dest, by_element = FALSE)
-# 	matrix_distances <- drop_units(sf_origin_distances + sf_dest_distances)
-# 	matrix_geom_dist <- calc_geom_dist_mat(sf_org)
-# 	matrix_distances <- matrix_geom_dist
-# }
+main_calc_flow_euclid_dist_mat_buffer <- function(char_schema, char_trips, buffer) {
+	
 
+	# sf_points <- sf_trips %>%
+	# 	select(flow_id, origin_geom, dest_geom)
+	# 
+	# sf_points$origin_geom <- st_transform(st_sfc(sf_points$origin_geom, crs = 32632), 
+	# 																		 crs = 4326)
+	# 
+	# sf_points$dest_geom <- st_transform(st_sfc(sf_points$dest_geom, crs = 32632), 
+	# 															 crs = 4326)
+	# startpoints <- data.table(flow_id = sf_points$flow_id, 
+	# 													startpoint = st_coordinates(sf_points$origin_geom))
+	# endpoints <- data.table(flow_id = sf_points$flow_id, 
+	# 												endpoint = st_coordinates(sf_points$dest_geom))
+	# 
+	# setnames(startpoints, c("flow_id", "startpoint_X", "startpoint_Y"))
+	# setnames(endpoints, c("flow_id", "endpoint_X", "endpoint_Y"))
+	# sf_coords <- merge(startpoints, endpoints, by = "flow_id")
+	# 
+	# 
+	# print(sf_coords)
+	# # Get sf-linestrings within buffer-area für each linestring
+	# sf_centroids <- st_centroid(sf_trips$line_geom)
+	# print(sf_centroids)
+	# sf_buffer <- st_buffer(sf_centroids, dist = buffer)
+	# print(sf_buffer)
+	# intersections <- st_intersects(sf_buffer, sparse = TRUE)
+	# print(intersections)
+	# pairs_list <- lapply(seq_along(intersections), function(i) {
+	# 	data.table(flow_m = i, flow_n = unlist(intersections[[i]]))
+	# })
+	# print(pairs_list)
+	# dt_flow_euclid <- rbindlist(pairs_list)
+	# dt_flow_euclid <- dt_flow_euclid[flow_m != flow_n]
+	# dt_flow_euclid <- dt_flow_euclid[, .(flow_m = pmin(flow_m, flow_n),
+	# 												 flow_n = pmax(flow_m, flow_n))]
+	
+	query <- paste0("ALTER TABLE ", paste0(char_schema, ".", char_trips),"
+	DROP COLUMN IF EXISTS centroid_geom;")
+	dbExecute(con, query)
+	
+	query <- paste0("ALTER TABLE ", paste0(char_schema, ".", char_trips),"
+	ADD COLUMN centroid_geom geometry(Point, 32632);")
+	dbExecute(con, query)
+	
+	query <- paste0("UPDATE ", paste0(char_schema, ".", char_trips),"
+	SET centroid_geom = ST_Centroid(line_geom);")
+	dbExecute(con, query)
 
-main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
+	query <- paste0("ALTER TABLE ", paste0(char_schema, ".", char_trips),"
+	DROP COLUMN IF EXISTS buffer_geom;")
+	dbExecute(con, query)
 	
-	# Get sf-vectors of start- and endpoints
-	sf_trips$startpoint <- lwgeom::st_startpoint(sf_trips$geometry)
-	sf_trips$endpoint <- lwgeom::st_endpoint(sf_trips$geometry)
-	sf_points <- sf_trips %>%
-		select(flow_id, startpoint, endpoint)
-	sf_points$startpoint <- st_transform(st_sfc(sf_points$startpoint, crs = 32632), 
-																			 crs = 4326)
+	query <- paste0("ALTER TABLE ", paste0(char_schema, ".", char_trips),"
+	ADD COLUMN buffer_geom geometry(Polygon, 32632);")
+	dbExecute(con, query)
 	
-	sf_points$endpoint <- st_transform(st_sfc(sf_points$endpoint, crs = 32632), 
-																 crs = 4326)
-	startpoints <- data.table(flow_id = sf_points$flow_id, 
-														startpoint = st_coordinates(sf_points$startpoint))
-	endpoints <- data.table(flow_id = sf_points$flow_id, 
-													endpoint = st_coordinates(sf_points$endpoint))
-	
-	setnames(startpoints, c("flow_id", "startpoint_X", "startpoint_Y"))
-	setnames(endpoints, c("flow_id", "endpoint_X", "endpoint_Y"))
-	sf_coords <- merge(startpoints, endpoints, by = "flow_id")
-
+	query <- paste0("UPDATE ", paste0(char_schema, ".", char_trips),"
+	SET buffer_geom = ST_Buffer(centroid_geom, ", buffer, ");")
+	dbExecute(con, query)
 	
 	
-	# Get sf-linestrings within buffer-area für each linestring
-	sf_centroids <- st_centroid(sf_trips$geometry)
-	sf_buffer <- st_buffer(sf_centroids, dist = buffer)
-	intersections <- st_intersects(sf_buffer, sparse = TRUE)
-	pairs_list <- lapply(seq_along(intersections), function(i) {
-		data.table(flow_m = i, flow_n = unlist(intersections[[i]]))
-	})
-	dt_flow_euclid <- rbindlist(pairs_list)
-	dt_flow_euclid <- dt_flow_euclid[flow_m != flow_n]
-	dt_flow_euclid <- dt_flow_euclid[, .(flow_m = pmin(flow_m, flow_n),
-													 flow_n = pmax(flow_m, flow_n))]
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+									" USING GIST(buffer_geom);")
+	dbExecute(con, query)
 	
+	
+	query <- paste0("CREATE TABLE euclid_buffer_pairs AS
+	SELECT 
+    a.flow_id AS flow_m, 
+    b.flow_id AS flow_n
+		FROM ", paste0(char_schema, ".", char_trips), " a
+		 JOIN ", paste0(char_schema, ".", char_trips), " b
+		ON 
+		    ST_Intersects(a.buffer_geom, b.buffer_geom)
+		WHERE 
+		    a.flow_id != b.flow_id; ")
+	
+	cat(query)
+	t1 <- proc.time()
+	dbExecute(con, query)
+	t2 <- proc.time()
+	print(t2-t1)
+	return(dbGetQuery(con, query))
+	
+	stop("psql queries work")
 	# 'dt_flow_euclid' contains all the combinations for which dists are calculated
 	dt_flow_euclid <- unique(dt_flow_euclid)
-	
+	print(dt_flow_euclid)
 	
 
 	# 'dt_merged' combines the combinations with the corresponding geometric features
@@ -390,7 +513,7 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 										 by.y = "flow_id",
 										 suffixes = c("_m", "_n"))
 
-
+	print(dt_merged)
 	
 	# Parallelize distance calculation
 	# Function to split indices into blocks
@@ -401,8 +524,14 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 	# Function to calculate haversine distances for a block of indices
 	calculate_haversine_block <- function(block_indices, dt) {
 		result <- t(sapply(block_indices, function(i) {
-			start_dist <- distHaversine(c(dt$startpoint_X_m[i], dt$startpoint_Y_m[i]), c(dt$startpoint_X_n[i], dt$startpoint_Y_n[i]))
-			end_dist <- distHaversine(c(dt$endpoint_X_m[i], dt$endpoint_Y_m[i]), c(dt$endpoint_X_n[i], dt$endpoint_Y_n[i]))
+			start_dist <- distHaversine(c(dt$startpoint_X_m[i], 
+																		dt$startpoint_Y_m[i]), 
+																	c(dt$startpoint_X_n[i], 
+																		dt$startpoint_Y_n[i]))
+			end_dist <- distHaversine(c(dt$endpoint_X_m[i], 
+																	dt$endpoint_Y_m[i]), 
+																c(dt$endpoint_X_n[i], 
+																	dt$endpoint_Y_n[i]))
 			c(start_dist, end_dist)
 		}))
 		return(result)
@@ -410,14 +539,14 @@ main_calc_flow_euclid_dist_mat <- function(sf_trips, buffer) {
 	
 	
 	# Create a cluster with 14 cores
-	cl <- makeCluster(14)
+	cl <- makeCluster(int_cores)
 	registerDoParallel(cl)
 	
 	# Ensure the cluster is stopped after use
 	on.exit(stopCluster(cl), add = TRUE)
 	
 	# Split the data into blocks
-	n_blocks <- 14
+	n_blocks <- int_cores
 	blocks <- split_indices(nrow(dt_merged), n_blocks)
 	
 	# Using foreach to calculate distances in parallel for each block

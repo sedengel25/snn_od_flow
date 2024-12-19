@@ -46,11 +46,15 @@ sf_trips$hour <- lubridate::hour(sf_trips$start_datetime)
 sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 2000
-int_kw <- c(9:11)
+dist_filter <- 100
+#int_kw <- c(9:11)
+int_wday <- c(1:4)
+int_hours <- c(6:8)
 sf_trips_sub <- sf_trips %>%
-	filter(week %in% int_kw) %>%
-	filter(trip_distance >= dist_filter)
+	#filter(week %in% int_kw) %>%
+	filter(trip_distance >= dist_filter) %>%
+	filter(hour %in% int_hours) %>%
+	filter(weekday %in% int_wday)
 nrow(sf_trips_sub)
 rm(sf_trips)
 gc()
@@ -83,6 +87,30 @@ sf_trips_sub <- sf_trips_sub %>% mutate(origin_id = as.integer(origin_id),
 
 
 t_start <- proc.time()
+
+char_schema <- paste0(char_data, 
+											"_min", 
+											dist_filter,
+											"_hours",
+											paste0(int_hours, collapse = "_"),
+											"_wdays",
+											paste0(int_wday, collapse = "_"),
+											"m_buffer",
+											char_buffer,
+											"m")
+
+query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
+cat(query)
+dbExecute(con, query)
+
+
+st_write(sf_trips_sub, con, Id(schema=char_schema, 
+												 table = "data"))
+
+main_calc_flow_euclid_dist_mat(char_schema = char_schema,
+															 char_trips = "data",
+															 n = nrow(sf_trips_sub))
+
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
@@ -134,6 +162,7 @@ matrix_flow_nd <- matrix(99999, nrow = num_ids, ncol = num_ids)
 matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
 matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
 gc()
+
 
 ################################################################################
 # Test MDS
@@ -191,9 +220,9 @@ gc()
 ################################################################################
 # Algorithm
 ################################################################################
-int_k <- 40
-int_eps <- 20
-int_minpts <- 22
+int_k <- 20
+int_eps <- 10
+int_minpts <- 12
 
 dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 k = int_k,
@@ -228,11 +257,23 @@ ggplot(data = sf_snn[sf_snn$cluster_pred!=0,]) +
 	theme_minimal()
 
 
+# char_schema <- paste0(char_data, 
+# 											"_kw_",
+# 											paste0(int_kw, collapse = "_"),
+# 											"_min", 
+# 											dist_filter,
+# 											
+# 											"m_buffer",
+# 											char_buffer,
+# 											"m")
+
 char_schema <- paste0(char_data, 
-											"_kw_",
-											paste0(int_kw, collapse = "_"),
 											"_min", 
 											dist_filter,
+											"_hours",
+											paste0(int_hours, collapse = "_"),
+											"_wdays",
+											paste0(int_wday, collapse = "_"),
 											"m_buffer",
 											char_buffer,
 											"m")
@@ -280,7 +321,7 @@ st_write(sf_kmeans, con, Id(schema=char_schema,
 														table = "kmeans"))
 rm(dt_kmeans)
 ################################################################################
-# 6. dbscan
+# 6. DBSCAN
 ################################################################################
 int_minpts <- 7
 k_distances <- kNNdist(as.dist(matrix_flow_nd), k = int_minpts - 1)
@@ -322,8 +363,32 @@ st_write(sf_dbscan, con, Id(schema=char_schema,
 															"_minpts",
 															int_minpts)))
 
+
 ################################################################################
-# 7. optics
+# 7. HDBSCAN
+################################################################################
+gc()
+hdbscan_minpts <- 30
+hdbscan_res <- dbscan::hdbscan(x = as.dist(matrix_flow_nd),
+															 minPts = hdbscan_minpts)
+gc()
+
+
+
+sf_hdbscan <- data.frame(
+	flow_id = sf_trips_sub$flow_id,
+	cluster_pred = hdbscan_res$cluster,
+	line_geom = sf_trips_sub$line_geom) %>%
+	st_as_sf()
+
+gc()
+
+st_write(sf_hdbscan, con, Id(schema=char_schema, 
+														table = paste0(
+															"hdbscan_minpts",
+															hdbscan_minpts)))
+################################################################################
+# 8. OPTICS
 ################################################################################
 gc()
 optics_res <- dbscan::optics(x = as.dist(matrix_flow_nd),
@@ -389,7 +454,7 @@ st_write(sf_optics, con, Id(schema=char_schema,
 															"optics_eps_cl",
 															int_epscl)))
 ################################################################################
-# 8. Silhouette Coefficient
+# 9. Silhouette Coefficient
 ################################################################################
 
 get_sil_df <- function(cluster, matrix_flow_nd) {
