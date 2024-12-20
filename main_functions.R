@@ -127,7 +127,139 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 							 "dt_d_pts_nd" = dt_d_pts_nd))
 }
 
+# Documentation: main_euclid_dist_mat_cpu
+# Usage: main_euclid_dist_mat_cpu(char_schema, char_trips, n, cores)
+# Description: Creates a (cpu-heavy) matrix containing the ED between all 
+# OD flows of the considered dataset
+# Args/Options: char_schema, char_trips, n, cores
+# Returns: ...
+# Output: ...
+# Action: psql-query
+main_calc_diff_flow_distances <- function(char_schema, char_trips, n, cores){
+	
+	
+	
+	query <- paste0("DROP INDEX IF EXISTS ", paste0(char_schema,
+																									".",
+																									char_trips,
+																									"_origin_geom_idx"))
+	dbExecute(con, query)
+	
+	
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+									" USING GIST(origin_geom);")
+	dbExecute(con, query)
+	
+	query <- paste0("DROP INDEX IF EXISTS ", paste0(char_schema,
+																									".",
+																									char_trips,
+																									"_dest_geom_idx"))
+	dbExecute(con, query)
+	
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+									" USING GIST(dest_geom);")
+	dbExecute(con, query)
+	
+	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".flow_distances"))
+	dbExecute(con, query)
+	
+	
+	query <- paste0("CREATE TABLE ", paste0(char_schema, ".flow_distances"),
+									" (flow_id_i INTEGER,
+									flow_id_j INTEGER,
+									flow_manhatten_pts_euclid INTEGER,
+        				  flow_chebyshev_pts_euclid INTEGER,
+        			    flow_euclid_norm DOUBLE PRECISION,
+        					flow_euclid INTEGER);")
+	cat(query)
+	dbExecute(con, query)
+	
+	
+	chunks <- r1_create_chunks(cores = cores, n = n)
+	print(chunks)
+	### Calculate euclidean distance between origin points
+	t1 <- proc.time()
+	parallel::mclapply(1:length(chunks), function(i) {
+		
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE) 
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+		
+		query <- paste0("INSERT INTO ", char_schema, ".flow_distances
+    (
+        flow_id_i,
+        flow_id_j,
+        flow_manhatten_pts_euclid,
+        flow_chebyshev_pts_euclid,
+        flow_euclid_norm,
+        flow_euclid
+    )
+    SELECT
+        a.flow_id AS flow_id_i,
+        b.flow_id AS flow_id_j,
+        
+        -- Manhattan distance between flows based on euclidean OD points distance
+        CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) +
+        CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER) AS flow_manhatten_pts_euclid,
 
+        -- Chebyshev distance between flows based on euclidean OD points distance
+        GREATEST(
+      		CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER),
+      		CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER)
+        ) AS flow_chebyshev_pts_euclid,
+				
+				-- Normalized euclidean distance in the 4D space
+				ROUND(
+				    (SQRT(
+				        0.5 * (
+				            POW(ST_X(a.origin_geom) - ST_X(b.origin_geom), 2) +
+				            POW(ST_Y(a.origin_geom) - ST_Y(b.origin_geom), 2)
+				        ) +
+				        0.5 * (
+				            POW(ST_X(a.dest_geom) - ST_X(b.origin_geom), 2) +
+				            POW(ST_Y(a.dest_geom) - ST_Y(b.dest_geom), 2)
+				        )
+				    ) / (a.trip_distance * b.trip_distance))::numeric, 6
+				) AS flow_euclid_norm,
+			        
+				-- Euclidean distance in the 4D space
+				CAST(ROUND(
+	            SQRT(
+	                0.5 * (
+	                    POW(ST_X(a.origin_geom) - ST_X(b.origin_geom), 2) +
+	                    POW(ST_Y(a.origin_geom) - ST_Y(b.origin_geom), 2)
+	                ) +
+	                0.5 * (
+	                    POW(ST_X(a.dest_geom) - ST_X(b.dest_geom), 2) +
+	                    POW(ST_Y(a.dest_geom) - ST_Y(b.dest_geom), 2)
+	                )
+	            )
+	        ) AS INTEGER) AS flow_euclid
+
+    FROM ", paste0(char_schema, ".", char_trips), " a
+    JOIN ", paste0(char_schema, ".", char_trips), " b
+    ON a.flow_id < b.flow_id
+    WHERE a.flow_id BETWEEN ", id_start, " AND ", id_end, ";")
+		
+		dbExecute(local_con, query)
+		
+	}, mc.cores = cores)
+	
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating flow_distances between ", n, "OD flows: ",
+			diff_time, "\n")
+	
+}
+	
+	
 # Documentation: main_euclid_dist_mat_cpu
 # Usage: main_euclid_dist_mat_cpu(char_schema, char_trips, n, cores)
 # Description: Creates a (cpu-heavy) matrix containing the ED between all 
@@ -199,8 +331,10 @@ main_euclid_dist_mat_cpu <- function(char_schema, char_trips, n, cores){
 			SELECT
 			a.flow_id AS flow_id_i,
 			b.flow_id AS flow_id_j,
-			CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) AS
-			euclidean_distance
+			CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) +
+			CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER)  AS
+			euclid_flow_dist,
+			
 			FROM ", paste0(char_schema, ".", char_trips)," a
 			JOIN ", paste0(char_schema, ".", char_trips), " b
 			ON
@@ -353,17 +487,7 @@ main_psql_dist_mat_to_matrix <- function(char_schema, n, cores){
 		id_end <- chunks[i]
 
 		
-	# 	query <- paste0("
-	#     SELECT
-	#       flow_id_i,
-	#       jsonb_object_agg(flow_id_j, euclidean_distance) AS distance_row
-	#     FROM ", char_schema, ".euclid_dist_sum
-	#     WHERE flow_id_i BETWEEN ", id_start, " AND ", id_end, "
-	#     GROUP BY flow_id_i
-	#     ORDER BY flow_id_i;
-	#   ")
-		
-		json_file <- paste0(path_pacmap, 
+  	json_file <- paste0(path_pacmap, 
 												paste0("/chunk_", id_start, "_", id_end, ".json"))
 		
 		if (file.exists(json_file)) {

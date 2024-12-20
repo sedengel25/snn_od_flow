@@ -80,9 +80,6 @@ path_pacmap <- here::here(path_python, char_schema)
 ################################################################################
 # 2. Calculate euclidean distances between all OD flows 
 ################################################################################
-
-
-
 # Create folder for pacmap-file depending on the OD flow subset
 if (!dir.exists(path_pacmap)) {
 	dir.create(path_pacmap, recursive = TRUE, mode = "0777") 
@@ -92,10 +89,10 @@ if (!dir.exists(path_pacmap)) {
 }
 
 # Calculate the euclidean distance between all OD flows
-main_euclid_dist_mat_cpu(char_schema = char_schema,
-															 char_trips = "data",
-															 n = nrow(sf_trips_sub),
-															 cores = int_cores)
+main_calc_diff_flow_distances(char_schema = char_schema,
+															char_trips = "data",
+															n = nrow(sf_trips_sub),
+															cores = int_cores)
 
 # Create an index on flow_id_i
 query <- paste0("DROP INDEX IF EXISTS ",
