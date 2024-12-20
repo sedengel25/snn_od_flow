@@ -1,14 +1,14 @@
 source("./src/functions.R")
 
-# Documentation: main_calc_flow_nd_dist_mat
-# Usage: main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
-# Description: Creates a matrix containing the ND between OD flwos depending
-# on the given raod network and the given local node distance matrix
+# Documentation: main_nd_dist_mat_ram_synth
+# Usage: main_nd_dist_mat_ram_synth(sf_trips, dt_network, dt_dist_mat)
+# Description: Creates a (ram-heavy) matrix containing the ND between OD flows depending
+	# on the given road network and the given local node distance matrix
 # Args/Options: sf_trips, dt_network, dt_dist_mat
 # Returns: matrix
 # Output: ...
 # Action: ...
-main_calc_flow_nd_dist_mat_synth_data <- function(sf_trips, dt_network, dt_dist_mat) {
+main_nd_dist_mat_ram_synth <- function(sf_trips, dt_network, dt_dist_mat) {
 	
 	### 1. Prepare the data ------------------------------------------------------
 	sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
@@ -23,9 +23,6 @@ main_calc_flow_nd_dist_mat_synth_data <- function(sf_trips, dt_network, dt_dist_
 	as.data.table()
 	dt_origin <- add_dist_start_end(dt_origin)
 	
-	
-	
-
 	
 	dt_dest <- sf_trips %>%
 		st_set_geometry("dest_geom") %>%
@@ -50,66 +47,33 @@ main_calc_flow_nd_dist_mat_synth_data <- function(sf_trips, dt_network, dt_dist_
 	
 	### 2. Calc ND between OD flows ----------------------------------------------
 	# ND between origin points
-	
 	dt_o_pts_nd <- parallel_process_networks(dt_origin, 
 																					 dt_network,
 																					 dt_dist_mat,
 																					 int_cores)
 	
-	
-	#print("ND between origin points calculated")
-	# ND between dest points
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,
 																					 dt_dist_mat,
 																					 int_cores)
 	
 	
-	#print("ND between dest points calculated")
-	# ND between OD flows
-	# dt_flow_nd <- dt_o_pts_nd %>%
-	# 	inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
-	# 	mutate(distance = distance.x + distance.y) %>%
-	# 	select(flow_m = from, flow_n = to, distance) %>%
-	# 	as.data.table
-	# 
-	# dt_flow_nd <- dt_flow_nd %>%
-	# 	group_by(flow_m) %>%
-	# 	mutate(row_id = row_number()) %>%
-	# 	ungroup() %>%
-	# 	as.data.table
 	return(list("dt_o_pts_nd" = dt_o_pts_nd,
 							"dt_d_pts_nd" = dt_d_pts_nd))
-	### 3. Calc OD-flow ND matrix ------------------------------------------------
-	# matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
-	# print("matrix conversion successful")
-	# sym_mat <- matrix_flow_dist
-	# sym_mat[is.na(sym_mat)] <- 0
-	# sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
-	# sym_mat[sym_mat == 0] <- NA
-	# print("symmat successful")
-	# 
-	# return(sym_mat)
 }
 
 
 
-# Documentation: main_calc_flow_nd_dist_mat
-# Usage: main_calc_flow_nd_dist_mat(sf_trips, dt_network, dt_dist_mat)
-# Description: Creates a matrix containing the ND between OD flwos depending
-	# on the given raod network and the given local node distance matrix
+# Documentation: main_nd_dist_mat_ram
+# Usage: main_nd_dist_mat_ram(sf_trips, dt_network, dt_dist_mat)
+# Description: Creates a (ram-heavy) matrix containing the ND between OD flows depending
+	# on the given road network and the given local node distance matrix
 # Args/Options: sf_trips, dt_network, dt_dist_mat
 # Returns: matrix
 # Output: ...
 # Action: ...
-main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
+main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 	
-	### 1. Prepare the data ------------------------------------------------------
-	# sf_trips$origin_geom <- lwgeom::st_startpoint(sf_trips$geometry)
-	# sf_trips$dest_geom <- lwgeom::st_endpoint(sf_trips$geometry)
-
-
-
 	dt_origin <- sf_trips %>%
 		st_set_geometry("o_closest_point") %>%
 		select(flow_id, origin_id, o_closest_point) %>%
@@ -118,13 +82,6 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 					 "geom" = "o_closest_point") %>%
 		as.data.table()
 
-	# dt_origin <- sf_trips %>%
-	# 	st_set_geometry("origin_geom") %>%
-	# 	select(flow_id, origin_id, origin_geom) %>%
-	# 	rename("id" = "flow_id",
-	# 				 "id_edge" = "origin_id",
-	# 				 "geom" = "origin_geom") %>%
-	# 	as.data.table()
 	dt_origin <- add_dist_start_end(dt_origin)
 	
 
@@ -137,13 +94,6 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 					 "geom" = "d_closest_point") %>%
 		as.data.table
 
-	# dt_dest <- sf_trips %>%
-	# 	st_set_geometry("dest_geom") %>%
-	# 	select(flow_id, dest_id, dest_geom) %>%
-	# 	rename("id" = "flow_id",
-	# 				 "id_edge" = "dest_id",
-	# 				 "geom" = "dest_geom") %>%
-	# 	as.data.table
 	dt_dest <- add_dist_start_end(dt_dest)
 	
 	
@@ -166,8 +116,6 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 																					dt_dist_mat,
 																					int_cores)
 	
-	
-	#print("ND between origin points calculated")
 	# ND between dest points
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,
@@ -175,36 +123,20 @@ main_calc_flow_nd_dist_mat <- function(sf_trips, dt_network, dt_dist_mat) {
 																					 int_cores)
 	
 	
-	#print("ND between dest points calculated")
-	# ND between OD flows
-	# dt_flow_nd <- dt_o_pts_nd %>%
-	# 	inner_join(dt_d_pts_nd, by = c("from" = "from", "to" = "to")) %>%
-	# 	mutate(distance = distance.x + distance.y) %>%
-	# 	select(flow_m = from, flow_n = to, distance) %>%
-	# 	as.data.table
-	# 
-	# dt_flow_nd <- dt_flow_nd %>%
-	# 	group_by(flow_m) %>%
-	# 	mutate(row_id = row_number()) %>%
-	# 	ungroup() %>%
-	# 	as.data.table
 	return(list("dt_o_pts_nd" = dt_o_pts_nd,
 							 "dt_d_pts_nd" = dt_d_pts_nd))
-	### 3. Calc OD-flow ND matrix ------------------------------------------------
-	# matrix_flow_dist <- calc_flow_nd_dist_mat(dt_flow_nd)
-	# print("matrix conversion successful")
-	# sym_mat <- matrix_flow_dist
-	# sym_mat[is.na(sym_mat)] <- 0
-	# sym_mat <- pmax(sym_mat, t(sym_mat))  # Elementweise das Maximum der Matrix und ihrer Transponierten
-	# sym_mat[sym_mat == 0] <- NA
-	# print("symmat successful")
-	# 
-	# return(sym_mat)
 }
 
 
-
-main_calc_flow_euclid_dist_mat <- function(char_schema, char_trips, n, cores){
+# Documentation: main_euclid_dist_mat_cpu
+# Usage: main_euclid_dist_mat_cpu(char_schema, char_trips, n, cores)
+# Description: Creates a (cpu-heavy) matrix containing the ED between all 
+	# OD flows of the considered dataset
+# Args/Options: char_schema, char_trips, n, cores
+# Returns: ...
+# Output: ...
+# Action: psql-query
+main_euclid_dist_mat_cpu <- function(char_schema, char_trips, n, cores){
 	
 
 	
@@ -242,7 +174,7 @@ main_calc_flow_euclid_dist_mat <- function(char_schema, char_trips, n, cores){
 	dbExecute(con, query)
 
 
-	chunks <- r1_create_chunks(cores = int_cores, n = n)
+	chunks <- r1_create_chunks(cores = cores, n = n)
 	print(chunks)
 	### Calculate euclidean distance between origin points
 	t1 <- proc.time()
@@ -400,6 +332,74 @@ main_calc_flow_euclid_dist_mat <- function(char_schema, char_trips, n, cores){
 	
 }
 
+
+
+main_psql_dist_mat_to_matrix <- function(char_schema, n, cores){
+	
+	chunks <- r1_create_chunks(cores = cores, n = n)
+	print(chunks)
+	results <- mclapply(1:length(chunks), function(i) {
+		
+		# Lokale PostgreSQL-Verbindung in jedem Worker
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE)
+		
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+
+		
+	# 	query <- paste0("
+	#     SELECT
+	#       flow_id_i,
+	#       jsonb_object_agg(flow_id_j, euclidean_distance) AS distance_row
+	#     FROM ", char_schema, ".euclid_dist_sum
+	#     WHERE flow_id_i BETWEEN ", id_start, " AND ", id_end, "
+	#     GROUP BY flow_id_i
+	#     ORDER BY flow_id_i;
+	#   ")
+		
+		json_file <- paste0(path_pacmap, 
+												paste0("/chunk_", id_start, "_", id_end, ".json"))
+		
+		if (file.exists(json_file)) {
+			file.remove(json_file)
+		}
+
+		query <- paste0("COPY (
+		    SELECT json_agg(row_to_json(t))
+		    FROM (
+		        SELECT 
+		            flow_id_i AS key,
+		            jsonb_object_agg(flow_id_j, euclidean_distance) AS value
+		        FROM ", char_schema, ".euclid_dist_sum
+		        WHERE flow_id_i BETWEEN ", id_start, " AND ", id_end, "
+		        GROUP BY flow_id_i
+		        ORDER BY flow_id_i
+		    ) t
+		) TO '", json_file, "';")
+		cat(query)
+		dbExecute(local_con, query)
+		
+		# result <- dbGetQuery(local_con, query)
+		# output_file <- file.path(here::here(path_pacmap, 
+		# 																		paste0("chunk_", 
+		# 																					 id_start, 
+		# 																					 "_",
+		# 																					 id_end,
+		# 																					 ".json")))
+		# print(output_file)
+		#write_json(result, output_file, pretty = TRUE)
+	}, mc.cores = cores)
+	
+
+	
+	#return(results)
+}
 # Documentation: main_calc_flow_euclid_dist_mat
 # Usage: main_calc_flow_euclid_dist_mat(sf_trips)
 # Description: Creates a matrix containing the euclidean distance between OD 

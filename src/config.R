@@ -50,6 +50,7 @@ library(concaveman)
 #library(MASS)
 library(bigmds)
 library(viridis)
+library(jsonlite)
 library(dplyr)
 ################################################################################
 # Postgresql-DB connection
@@ -125,6 +126,8 @@ path_osm_pbf <- "data/osm_pbf"
 path_osm_sql <- here::here("data/osm_sql")
 
 path_input_data <- "data/input"
+
+path_python <- here::here("python")
 ################################################################################
 # File
 ################################################################################

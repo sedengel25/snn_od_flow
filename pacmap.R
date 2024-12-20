@@ -19,8 +19,8 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
-char_buffer <- "2000"
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[20]
+char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
 	char_dt_dist_mat))
@@ -31,7 +31,9 @@ dt_dist_mat <- dt_dist_mat %>%
 	mutate(m = round(m, 0) %>% as.integer())
 
 
-
+################################################################################
+# 2. OD flow data
+################################################################################
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 print(available_mapped_trip_data)
 char_data <- available_mapped_trip_data[2, "table_name"]
@@ -54,39 +56,12 @@ sf_trips_sub <- sf_trips %>%
 	#filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
 	filter(hour %in% int_hours) %>%
-	filter(weekday %in% int_wday)
-nrow(sf_trips_sub)
+	filter(weekday %in% int_wday) %>% 
+	mutate(origin_id = as.integer(origin_id),
+				 dest_id = as.integer(dest_id))
+sf_trips_sub$flow_id <- 1:nrow(sf_trips_sub)
 rm(sf_trips)
 gc()
-
-# if(char_prefix_data == "sr"){
-# 	sf_trips <- sf_trips %>%
-# 		filter(trip_distance > 2000)
-# } else if(char_prefix_data == "nb"){
-
-# } else if(char_prefix_data == "comb"){
-# 	sf_trips_sr <- sf_trips %>%
-# 		filter(source == "sr" & trip_distance > 2000) 
-# 	
-# 	sf_trips_nb <- sf_trips %>%
-# 		filter(source =="nb" & trip_distance > 2000 & week %in% int_kw) %>%
-# 		slice_head(n = nrow(sf_trips_sr))
-# 	
-# 	sf_trips <- rbind(sf_trips_sr, sf_trips_nb)
-# }
-
-
-
-sf_trips_sub$flow_id <- 1:nrow(sf_trips_sub)
-
-sf_trips_sub <- sf_trips_sub %>% mutate(origin_id = as.integer(origin_id),
-																				dest_id = as.integer(dest_id))
-
-
-
-
-
-t_start <- proc.time()
 
 char_schema <- paste0(char_data, 
 											"_min", 
@@ -96,24 +71,69 @@ char_schema <- paste0(char_data,
 											"_wdays",
 											paste0(int_wday, collapse = "_"))
 
-query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
-cat(query)
-dbExecute(con, query)
+psql1_create_schema(con, char_schema)
 
 
 st_write(sf_trips_sub, con, Id(schema=char_schema, 
 															 table = "data"))
+path_pacmap <- here::here(path_python, char_schema)
+################################################################################
+# 2. Calculate euclidean distances between all OD flows 
+################################################################################
 
 
-main_calc_flow_euclid_dist_mat(char_schema = char_schema,
+
+# Create folder for pacmap-file depending on the OD flow subset
+if (!dir.exists(path_pacmap)) {
+	dir.create(path_pacmap, recursive = TRUE, mode = "0777") 
+	message("Directory created with full permissions: ", path_pacmap)
+} else {
+	message("Directory already exists: ", path_pacmap)
+}
+
+# Calculate the euclidean distance between all OD flows
+main_euclid_dist_mat_cpu(char_schema = char_schema,
 															 char_trips = "data",
 															 n = nrow(sf_trips_sub),
 															 cores = int_cores)
+
+# Create an index on flow_id_i
+query <- paste0("DROP INDEX IF EXISTS ",
+								char_schema, ".idx_flow_id_i")
+
+dbExecute(con, query)
+
+query <- paste0("CREATE INDEX idx_flow_id_i ON ",
+								char_schema, ".euclid_dist_sum (flow_id_i);")
+dbExecute(con, query)
+
+# Write from psql-table into json-files 
+main_psql_dist_mat_to_matrix(char_schema = char_schema,
+														 n = nrow(sf_trips_sub),
+														 cores = int_cores)
+
+
+
+# Turn json-files into symmetric matrix as numpy array
+system2("python3", args = c(here::here(path_python,
+																			 "read_json_to_npy.py"),
+														"--directory", path_pacmap),
+				stdout = "", stderr = "")
+
+# Create PaCMAP from numpy array
+system2("python3", args = c(here::here(path_python,
+																			 "pacmap_cpu.py"),
+														"--directory", path_pacmap,
+														"--distance euclid --n", nrow(sf_trips_sub)),
+				stdout = "", stderr = "")
+
+
+
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
 gc()
-dt_pts_nd <- main_calc_flow_nd_dist_mat(sf_trips_sub, dt_network, dt_dist_mat)
+dt_pts_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
 rm(dt_dist_mat)
 gc()
 dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
@@ -150,39 +170,30 @@ dt_flow_nd <- dt_flow_nd %>%
 
 
 
-# dbWriteTable(con, substr(char_dt_dist_mat, 
-# 												 start = 1, 
-# 												 stop = nchar(char_dt_dist_mat) - 4),
-# 						 dt_flow_nd)
-
-num_ids <- nrow(sf_trips_sub)
-matrix_flow_nd <- matrix(99999, nrow = num_ids, ncol = num_ids)
+gc()
+matrix_flow_nd <- matrix(99999, nrow = nrow(sf_trips_sub), ncol = nrow(sf_trips_sub))
 matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
 matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
 gc()
 
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+np_matrix_flow_nd <- np$array(matrix_flow_nd)
+np$save(here::here(path_pacmap, "nd_mat.npy"),
+				np_matrix_flow_nd)
 
-
+system2("python3", args = c(here::here(path_python,
+																			 "pacmap_ram.py"),
+														"--directory", path_pacmap,
+														"--distance nd"),
+				stdout = "", stderr = "")
 ################################################################################
 # 4. PaCMAP
 ################################################################################
-reticulate::use_virtualenv("r-reticulate", required = TRUE)
-np <- reticulate::import("numpy")
-char_project_dir <- "/home/sebastiandengel/PaCMAP_JS/source/pacmap"
-# np_matrix_flow_nd <- np$array(matrix_flow_nd)
-# np$save(paste0(char_project_dir, "/nd_mat.npy"))
-#py_run_file(paste0(char_project_dir, "/pacmap.py"))
-embedding <- np$load(paste0(char_project_dir, "/embedding.npy")) %>%
-	as.data.frame()
+df_euclid_embedding <- load_pacmap_embedding(path_pacmap, "euclid", np)
+df_nd_embedding <- load_pacmap_embedding(path_pacmap, "nd", np)
 
-
-
-df_embedding <- data.frame(
-	x = embedding[, 1],
-	y = embedding[, 2]
-)
-df_embedding$id <- 1:nrow(df_embedding)
-ggplot(df_embedding, aes(x = x, y = y)) +
+ggplot(df_euclid_embedding, aes(x = x, y = y)) +
 	geom_point(alpha = 0.1) +  
 	stat_density2d(aes(fill =after_stat(level)),
 								 geom = "polygon",
@@ -192,13 +203,70 @@ ggplot(df_embedding, aes(x = x, y = y)) +
 	scale_fill_viridis_c(option = "plasma") +  
 	theme_minimal() +
 	labs(
-		title = "PACMAP based on network distance",
+		title = "PACMAP for euclidean distance",
 		x = "x",
 		y = "y",
 		fill = "Density"
 	)
 
+ggplot(df_nd_embedding, aes(x = x, y = y)) +
+	geom_point(alpha = 0.1) +  
+	stat_density2d(aes(fill =after_stat(level)),
+								 geom = "polygon",
+								 alpha = 1,
+								 adjust = 0.1,
+								 n = 150) +
+	scale_fill_viridis_c(option = "plasma") +  
+	theme_minimal() +
+	labs(
+		title = "PACMAP for network distance",
+		x = "x",
+		y = "y",
+		fill = "Density"
+	)
 
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+hdbscan <- import("hdbscan")
+
+
+
+# int_k <- 12
+# int_eps <- 6
+# int_minpts <- 10
+# hdbcsan_res_euclid <- dbscan::hdbscan(df_euclid_embedding[,c(1:2)], minPts = int_minpts)
+# hdbcsan_res_nd <- dbscan::hdbscan(df_nd_embedding[,c(1:2)], minPts = int_minpts)
+# snn_res_euclid <- dbscan::sNNclust(df_euclid_embedding[,c(1:2)], 
+# 																	 k = int_k,
+# 																	 eps = int_eps,
+# 																	 minPts = int_minpts)
+# 
+# snn_res_nd <- dbscan::sNNclust(df_nd_embedding[,c(1:2)], 
+# 															 k = int_k,
+# 															 eps = int_eps,
+# 															 minPts = int_minpts)
+
+
+
+list_py_hdbscan <- py_hdbscan_dbcv(np = np,
+								df_euclid_embedding = df_euclid_embedding,
+								df_nd_embedding = df_nd_embedding,
+								minpts = 10)
+list_py_hdbscan$dbcv_euclid
+list_py_hdbscan$dbcv_nd
+
+py_get_dbcv(np,
+						df_euclid_embedding,
+						df_nd_embedding,
+						cluster_labels_euclid = hdbcsan_res_euclid$cluster,
+						cluster_labels_nd = hdbcsan_res_nd$cluster)
+
+
+
+
+
+create_pacmap_plotly_with_clusters(list_py_hdbscan$df_cluster_euclid)
+create_pacmap_plotly_with_clusters(list_py_hdbscan$df_cluster_nd)
 ################################################################################
 # 5. Add cluster to PaCMAP
 ################################################################################
@@ -220,40 +288,7 @@ if (nrow(df_snn) != nrow(df_embedding)){
 	stop("Embedding and clsuter dataset have different dimensions")
 }
 
-df_pacmap <- df_embedding %>%
-	left_join(df_snn %>% select(flow_id, cluster_pred),
-						by = c("id" = "flow_id"))
 
-
-int_clusters <- sort(unique(df_pacmap$cluster_pred))
-
-valid_colors <- colors()[!grepl("black|gray|grey", colors(), ignore.case = TRUE)]
-random_colors <- setNames(
-	c("black", sample(valid_colors, length(int_clusters) - 1)),  # Verwende gefilterte Farben
-	int_clusters
-)
-
-
-p <- ggplot(df_pacmap 
-						%>% filter(cluster_pred != 0)
-			 	, aes(x = x, y = y, color = factor(cluster_pred))) +
-	geom_point(size = 1, alpha = 0.3) +
-	scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
-	labs(
-		title = "PaCMAP by Clusters",
-		x = "x",
-		y = "y"
-	) +
-	theme_minimal() +
-	theme(
-		legend.position = "none",
-		plot.title = element_text(hjust = 0.5, size = 16),
-		axis.title = element_text(size = 12)
-	)
-
-
-# Interaktives Plotly-Plot
-ggplotly(p, tooltip = c("x", "y", "color"))
 
 ################################################################################
 # 5. CDBW

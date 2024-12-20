@@ -733,3 +733,123 @@ reduce_networks_to_op <- function(sf_cluster_networks,
 	
 	return(sf_cluster_networks)
 }
+
+################################################################################
+# pacmap.R
+################################################################################
+
+# Documentation: load_pacmap_embedding
+# Usage: load_pacmap_embedding(sdistance, np)
+# Description: Load numpy file created by pacmap and turn it into a R-df
+# Args/Options: distance, np
+# Returns: df
+# Output: ...
+# Action: ...
+load_pacmap_embedding <- function(path_pacmap, distance, np) {
+	embedding <- np$load(here::here(path_pacmap, paste0(distance, 
+																											"_embedding.npy"))) %>%
+		as.data.frame()
+	
+	
+	df_embedding <- data.frame(
+		x = embedding[, 1],
+		y = embedding[, 2]
+	)
+	df_embedding$id <- 1:nrow(df_embedding)
+	return(df_embedding)
+}
+
+
+# Documentation: create_pacmap_plotly_with_clusters
+# Usage: create_pacmap_plotly_with_clusters(df_embedding, df_cluster)
+# Description: Creates a plotyly with clsuters assigned to the pacmap
+# Args/Options: df_embedding, df_cluster
+# Returns: ...
+# Output: plotly
+# Action: ...
+create_pacmap_plotly_with_clusters <- function(df_pacmap) {
+
+	int_clusters <- sort(unique(df_pacmap$cluster))
+	
+	# valid_colors <- colors()[!grepl("black|gray|grey", colors(), ignore.case = TRUE)]
+	# print(valid_colors)
+	random_colors <- setNames(
+		c("black", sample(colors(), length(int_clusters) - 1)),  # Verwende gefilterte Farben
+		int_clusters
+	)
+	
+	p <- ggplot(df_pacmap 
+							%>% filter(cluster != 0)
+							, aes(x = x, y = y, color = factor(cluster))) +
+		geom_point(size = 1, alpha = 0.3) +
+		scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
+		labs(
+			title = "PaCMAP by Clusters",
+			x = "x",
+			y = "y"
+		) +
+		theme_minimal() +
+		theme(
+			legend.position = "none",
+			plot.title = element_text(hjust = 0.5, size = 16),
+			axis.title = element_text(size = 12)
+		)
+	
+	
+	# Interaktives Plotly-Plot
+	ggplotly(p, tooltip = c("x", "y", "color"))
+}
+
+
+
+py_get_dbcv <- function(np, 
+												df_euclid_embedding, 
+												df_nd_embedding, 
+												cluster_labels_euclid,
+												cluster_labels_nd) {
+	labels_euclid <- np$array(cluster_labels_euclid, dtype = "int32")
+	labels_nd <- np$array(cluster_labels_nd, dtype = "int32")
+	x_euclid <- np$array(df_euclid_embedding[, c(1:2)] %>% as.matrix())
+	x_nd <- np$array(df_nd_embedding[, c(1:2)] %>% as.matrix())
+	dbcv_euclid <- hdbscan$validity$validity_index(x_euclid, labels_euclid,
+																								 per_cluster_scores = FALSE)
+	
+	dbcv_nd <- hdbscan$validity$validity_index(x_nd, labels_nd, 
+																						 per_cluster_scores = FALSE)
+	return(list("dbcv_euclid" = dbcv_euclid, "dbcv_nd" = dbcv_nd))
+}
+
+
+py_hdbscan_dbcv <- function(np, 
+													  df_euclid_embedding, 
+											      df_nd_embedding, 
+														minpts) {
+
+	x_euclid <- np$array(df_euclid_embedding[, c(1:2)] %>% as.matrix())
+	x_nd <- np$array(df_nd_embedding[, c(1:2)] %>% as.matrix())
+	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
+	cluster_euclid <- hdbscan_model$fit(x_euclid)
+	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
+	cluster_nd <- hdbscan_model$fit(x_nd)
+	labels_euclid <- np$array(cluster_euclid$labels_, dtype = "int32")
+	print(labels_euclid)
+	labels_nd <- np$array(cluster_nd$labels_, dtype = "int32")
+	print(labels_euclid)
+	dbcv_euclid <- hdbscan$validity$validity_index(x_euclid, labels_euclid,
+																								 per_cluster_scores = FALSE)
+	
+	dbcv_nd <- hdbscan$validity$validity_index(x_nd, labels_nd, 
+																						 per_cluster_scores = FALSE)
+	df_cluster_euclid <- cbind(df_euclid_embedding[, c(1:2)], cluster_euclid$labels_)
+	df_cluster_nd <- cbind(df_nd_embedding[, c(1:2)], cluster_nd$labels_)
+	colnames(df_cluster_euclid) <- c("x", "y", "cluster")
+	colnames(df_cluster_nd) <- c("x", "y", "cluster")
+	df_cluster_euclid$cluster <- df_cluster_euclid$cluster + 1
+	df_cluster_nd$cluster <- df_cluster_nd$cluster + 1
+	print(table(df_cluster_euclid$cluster))
+	print(table(df_cluster_nd$cluster))
+	return(list("dbcv_euclid" = dbcv_euclid, 
+							"dbcv_nd" = dbcv_nd,
+							"df_cluster_euclid" = df_cluster_euclid,
+							"df_cluster_nd" = df_cluster_nd))
+}

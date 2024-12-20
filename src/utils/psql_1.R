@@ -524,3 +524,10 @@ psql1_sample_points_on_network <- function(con,
   JOIN ", char_network," ON temp_exploded_points.id_edge = ", char_network, ".id;")
 	dbExecute(con, query)
 }
+
+
+psql1_create_schema <- function(con, char_schema) {
+  query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
+  cat(query)
+  dbExecute(con, query)
+}
