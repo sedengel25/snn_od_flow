@@ -746,8 +746,8 @@ reduce_networks_to_op <- function(sf_cluster_networks,
 # Output: ...
 # Action: ...
 load_pacmap_embedding <- function(path_pacmap, distance, np) {
-	embedding <- np$load(here::here(path_pacmap, paste0(distance, 
-																											"_embedding.npy"))) %>%
+	path <- here::here(path_pacmap, distance)
+	embedding <- np$load(here::here(path, "embedding.npy")) %>%
 		as.data.frame()
 	
 	
@@ -756,7 +756,32 @@ load_pacmap_embedding <- function(path_pacmap, distance, np) {
 		y = embedding[, 2]
 	)
 	df_embedding$id <- 1:nrow(df_embedding)
+	df_embedding$dist_measure <- distance
 	return(df_embedding)
+}
+
+
+
+pacmap_density_plot <- function(df_embedding) {
+	dist <- df_embedding[1,4] %>% 
+					as.character()
+  p <- ggplot(df_embedding, aes(x = x, y = y)) +
+  	geom_point(alpha = 0.1) +  
+  	stat_density2d(aes(fill =after_stat(level)),
+  								 geom = "polygon",
+  								 alpha = 1,
+  								 adjust = 0.1,
+  								 n = 150) +
+  	scale_fill_viridis_c(option = "plasma") +  
+  	theme_minimal() +
+  	labs(
+  		title = paste0("PACMAP for ", dist),
+  		x = "x",
+  		y = "y",
+  		fill = "Density"
+  	)
+  
+  print(p)
 }
 
 
@@ -821,35 +846,26 @@ py_get_dbcv <- function(np,
 
 
 py_hdbscan_dbcv <- function(np, 
-													  df_euclid_embedding, 
-											      df_nd_embedding, 
+													  df_embedding, 
 														minpts) {
+	dist <- df_embedding[1,4] %>% 
+		as.character()
+	x <- np$array(df_embedding[, c(1:2)] %>% as.matrix())
+	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
+	hdbscan_res <- hdbscan_model$fit(x)
+	np_labels <- np$array(hdbscan_res$labels_, dtype = "int32")
+	dbcv <- hdbscan$validity$validity_index(x, np_labels)
+	df_cluster <- cbind(df_embedding[, c(1:2)], hdbscan_res$labels_)
+	cdbw <- cdbw(x = df_cluster[, c(1:2)], clustering = df_cluster[,3])
+	colnames(df_cluster) <- c("x", "y", "cluster")
+	df_cluster$cluster <- df_cluster$cluster + 1
 
-	x_euclid <- np$array(df_euclid_embedding[, c(1:2)] %>% as.matrix())
-	x_nd <- np$array(df_nd_embedding[, c(1:2)] %>% as.matrix())
-	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
-	cluster_euclid <- hdbscan_model$fit(x_euclid)
-	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
-	cluster_nd <- hdbscan_model$fit(x_nd)
-	labels_euclid <- np$array(cluster_euclid$labels_, dtype = "int32")
-	print(labels_euclid)
-	labels_nd <- np$array(cluster_nd$labels_, dtype = "int32")
-	print(labels_euclid)
-	dbcv_euclid <- hdbscan$validity$validity_index(x_euclid, labels_euclid,
-																								 per_cluster_scores = FALSE)
+	res_list <- list("dist" = dist,
+			 "dbcv" = dbcv, 
+			 "cdbw" = cdbw$cdbw,
+			 "cdbw_comp" = cdbw$compactness,
+			 "cdbw_coh" = cdbw$cohesion,
+			 "cdbw_sep" = cdbw$sep)
 	
-	dbcv_nd <- hdbscan$validity$validity_index(x_nd, labels_nd, 
-																						 per_cluster_scores = FALSE)
-	df_cluster_euclid <- cbind(df_euclid_embedding[, c(1:2)], cluster_euclid$labels_)
-	df_cluster_nd <- cbind(df_nd_embedding[, c(1:2)], cluster_nd$labels_)
-	colnames(df_cluster_euclid) <- c("x", "y", "cluster")
-	colnames(df_cluster_nd) <- c("x", "y", "cluster")
-	df_cluster_euclid$cluster <- df_cluster_euclid$cluster + 1
-	df_cluster_nd$cluster <- df_cluster_nd$cluster + 1
-	print(table(df_cluster_euclid$cluster))
-	print(table(df_cluster_nd$cluster))
-	return(list("dbcv_euclid" = dbcv_euclid, 
-							"dbcv_nd" = dbcv_nd,
-							"df_cluster_euclid" = df_cluster_euclid,
-							"df_cluster_nd" = df_cluster_nd))
+	return(invisible(res_list))
 }

@@ -78,16 +78,8 @@ st_write(sf_trips_sub, con, Id(schema=char_schema,
 															 table = "data"))
 path_pacmap <- here::here(path_python, char_schema)
 ################################################################################
-# 2. Calculate euclidean distances between all OD flows 
+# 2. Calculate different distance measures between all OD flows 
 ################################################################################
-# Create folder for pacmap-file depending on the OD flow subset
-if (!dir.exists(path_pacmap)) {
-	dir.create(path_pacmap, recursive = TRUE, mode = "0777") 
-	message("Directory created with full permissions: ", path_pacmap)
-} else {
-	message("Directory already exists: ", path_pacmap)
-}
-
 # Calculate the euclidean distance between all OD flows
 main_calc_diff_flow_distances(char_schema = char_schema,
 															char_trips = "data",
@@ -101,132 +93,88 @@ query <- paste0("DROP INDEX IF EXISTS ",
 dbExecute(con, query)
 
 query <- paste0("CREATE INDEX idx_flow_id_i ON ",
-								char_schema, ".euclid_dist_sum (flow_id_i);")
+								char_schema, ".flow_distances (flow_id_i);")
 dbExecute(con, query)
 
-# Write from psql-table into json-files 
-main_psql_dist_mat_to_matrix(char_schema = char_schema,
-														 n = nrow(sf_trips_sub),
-														 cores = int_cores)
+char_dist_measures <- c("flow_manhattan_pts_euclid",
+												"flow_chebyshev_pts_euclid",
+												"flow_euclid",
+												"flow_euclid_norm")
+#sudo chown -R postgres /home/sebastiandengel/snn_flow/python --> run in terminal
+
+for(dist_measure in char_dist_measures){
+	folder <- here::here(path_pacmap, dist_measure)
+	# Create folder for pacmap-file depending on the OD flow subset
+	if (!dir.exists(folder)) {
+		dir.create(folder, recursive = TRUE, mode = "0777") 
+		message("Directory created with full permissions: ", folder)
+	} else {
+		message("Directory already exists: ", folder)
+	}
+	
+	# To make this work you need to allow your user to execute
+	# chownd-commands without a password
+	system2("/usr/bin/sudo", c("chown", "-R", "postgres", folder))
+	
+	# Write from psql-table into json-files 
+	main_psql_dist_mat_to_matrix(char_schema = char_schema,
+															 dist_measure = dist_measure,
+															 n = nrow(sf_trips_sub),
+															 cores = int_cores)
 
 
+	Sys.sleep(10)
+	# Turn json-files into symmetric matrix as numpy array
+	system2("python3", args = c(here::here(path_python,
+																				 "read_json_to_npy.py"),
+															"--directory", folder,
+															"--distance", dist_measure),
+					stdout = "", stderr = "")
+	
+	# Create PaCMAP from numpy array
+	system2("python3", args = c(here::here(path_python,
+																				 "pacmap_cpu.py"),
+															"--directory ", folder,
+															"--distance ", dist_measure, " --n ", nrow(sf_trips_sub)),
+					stdout = "", stderr = "")
 
-# Turn json-files into symmetric matrix as numpy array
-system2("python3", args = c(here::here(path_python,
-																			 "read_json_to_npy.py"),
-														"--directory", path_pacmap),
-				stdout = "", stderr = "")
-
-# Create PaCMAP from numpy array
-system2("python3", args = c(here::here(path_python,
-																			 "pacmap_cpu.py"),
-														"--directory", path_pacmap,
-														"--distance euclid --n", nrow(sf_trips_sub)),
-				stdout = "", stderr = "")
-
+}
 
 
 ################################################################################
-# 3. Calculate network distances between OD flows and put it into a matrix
+# 3. PaCMAP
 ################################################################################
-gc()
-dt_pts_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
-rm(dt_dist_mat)
-gc()
-dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
-dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
-char_buffer
-
-
-
-rm(dt_pts_nd)
-gc()
-
-dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
-rm(dt_o_pts_nd)
-rm(dt_d_pts_nd)
-gc()
-dt_flow_nd[, distance := distance.x + distance.y]
-dt_flow_nd <- dt_flow_nd[, .(flow_m = from, flow_n = to, distance)]
-
-
-dt_sym <- rbind(
-	dt_flow_nd,
-	dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
-)
-rm(dt_flow_nd)
-gc()
-
-dt_flow_nd <- dt_sym
-rm(dt_sym)
-gc()
-
-dt_flow_nd <- dt_flow_nd %>%
-	rename(from = flow_m,
-				 to = flow_n)
-
-
-
-gc()
-matrix_flow_nd <- matrix(99999, nrow = nrow(sf_trips_sub), ncol = nrow(sf_trips_sub))
-matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
-matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
-gc()
-
-reticulate::use_virtualenv("r-reticulate", required = TRUE)
-np <- reticulate::import("numpy")
-np_matrix_flow_nd <- np$array(matrix_flow_nd)
-np$save(here::here(path_pacmap, "nd_mat.npy"),
-				np_matrix_flow_nd)
-
-system2("python3", args = c(here::here(path_python,
-																			 "pacmap_ram.py"),
-														"--directory", path_pacmap,
-														"--distance nd"),
-				stdout = "", stderr = "")
-################################################################################
-# 4. PaCMAP
-################################################################################
-df_euclid_embedding <- load_pacmap_embedding(path_pacmap, "euclid", np)
-df_nd_embedding <- load_pacmap_embedding(path_pacmap, "nd", np)
-
-ggplot(df_euclid_embedding, aes(x = x, y = y)) +
-	geom_point(alpha = 0.1) +  
-	stat_density2d(aes(fill =after_stat(level)),
-								 geom = "polygon",
-								 alpha = 1,
-								 adjust = 0.1,
-								 n = 150) +
-	scale_fill_viridis_c(option = "plasma") +  
-	theme_minimal() +
-	labs(
-		title = "PACMAP for euclidean distance",
-		x = "x",
-		y = "y",
-		fill = "Density"
-	)
-
-ggplot(df_nd_embedding, aes(x = x, y = y)) +
-	geom_point(alpha = 0.1) +  
-	stat_density2d(aes(fill =after_stat(level)),
-								 geom = "polygon",
-								 alpha = 1,
-								 adjust = 0.1,
-								 n = 150) +
-	scale_fill_viridis_c(option = "plasma") +  
-	theme_minimal() +
-	labs(
-		title = "PACMAP for network distance",
-		x = "x",
-		y = "y",
-		fill = "Density"
-	)
-
 reticulate::use_virtualenv("r-reticulate", required = TRUE)
 np <- reticulate::import("numpy")
 hdbscan <- import("hdbscan")
 
+df_1_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[1], np)
+df_2_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[2], np)
+df_3_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[3], np)
+df_4_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[4], np)
 
+pacmap_density_plot(df_1_embedding)
+pacmap_density_plot(df_2_embedding)
+pacmap_density_plot(df_3_embedding)
+pacmap_density_plot(df_4_embedding)
+
+int_minpts <- 10
+list_embedding_1 <- py_hdbscan_dbcv(np = np, 
+								df_embedding = df_1_embedding,
+								minpts = int_minpts)
+list_embedding_1
+list_embedding_2 <- py_hdbscan_dbcv(np = np, 
+																		df_embedding = df_2_embedding,
+																		minpts = int_minpts)
+list_embedding_2
+list_embedding_3 <- py_hdbscan_dbcv(np = np, 
+																		df_embedding = df_3_embedding,
+																		minpts = int_minpts)
+list_embedding_3
+list_embedding_4 <- py_hdbscan_dbcv(np = np, 
+																		df_embedding = df_4_embedding,
+																		minpts = int_minpts)
+list_embedding_4
 
 # int_k <- 12
 # int_eps <- 6
@@ -245,10 +193,7 @@ hdbscan <- import("hdbscan")
 
 
 
-list_py_hdbscan <- py_hdbscan_dbcv(np = np,
-								df_euclid_embedding = df_euclid_embedding,
-								df_nd_embedding = df_nd_embedding,
-								minpts = 10)
+
 list_py_hdbscan$dbcv_euclid
 list_py_hdbscan$dbcv_nd
 

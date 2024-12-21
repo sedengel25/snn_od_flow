@@ -82,6 +82,11 @@ write_rds(x = dt_dist_mat, file = paste0("./data/input/dt_dist_mat/",
 																				 int_buffer,
 																				 "_dist_mat.rds"))
 
+dbWriteTable(con, paste0(char_region_abb,
+						 "_",
+						 int_buffer,
+						 "_dist_mat"), value = dt_dist_mat)
+
 igraph_dist_mat <- dt_dist_mat %>%
 	as.data.frame() %>%
 	rename("from" = "source",
