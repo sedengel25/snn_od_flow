@@ -8,30 +8,15 @@ source("./main_functions.R")
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
 char_network <- available_networks[2, "table_name"]
-dt_network <- st_read(con, char_network) %>% as.data.table
-sf_network <- st_as_sf(dt_network)
-ggplot() +
-	geom_sf(data=sf_network) 
+# dt_network <- st_read(con, char_network) %>% as.data.table
+# sf_network <- st_as_sf(dt_network)
+# ggplot() +
+# 	geom_sf(data=sf_network)
 
-as_sfnetwork(sf_network)
-
-char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
-char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
-print(char_av_dt_dist_mat_files)
-# stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[20]
-char_buffer <- "50000"
-dt_dist_mat <- read_rds(here::here(
-	char_path_dt_dist_mat,
-	char_dt_dist_mat))
+char_dist_mat <- "dd_center_50000_dist_mat"
 
 
-# m-Spalte runden und in Integer umwandeln
-dt_dist_mat <- dt_dist_mat %>%
-	mutate(m = round(m, 0) %>% as.integer())
-
-
-################################################################################
+#################################################################################
 # 2. OD flow data
 ################################################################################
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
@@ -87,22 +72,27 @@ main_calc_diff_flow_distances(char_schema = char_schema,
 															cores = int_cores)
 
 # Create an index on flow_id_i
-query <- paste0("DROP INDEX IF EXISTS ",
-								char_schema, ".idx_flow_id_i")
-
+query <- paste0("DROP INDEX IF EXISTS ", char_schema, ".flow_distances_flow_id_i_flow_id_j_idx;")
 dbExecute(con, query)
 
-query <- paste0("CREATE INDEX idx_flow_id_i ON ",
-								char_schema, ".flow_distances (flow_id_i);")
+query <- paste0("CREATE INDEX ON ",
+								char_schema, ".flow_distances (flow_id_i, flow_id_j);")
 dbExecute(con, query)
+
+main_nd_dist_mat_cpu(char_schema = char_schema,
+										 char_network = char_network,
+										 char_dist_mat = char_dist_mat,
+										 n = nrow(sf_trips_sub),
+										 cores = int_cores)
 
 char_dist_measures <- c("flow_manhattan_pts_euclid",
 												"flow_chebyshev_pts_euclid",
 												"flow_euclid",
-												"flow_euclid_norm")
+												"flow_euclid_norm",
+												"flow_manhatten_pts_network")
 #sudo chown -R postgres /home/sebastiandengel/snn_flow/python --> run in terminal
 
-for(dist_measure in char_dist_measures){
+for(dist_measure in char_dist_measures[5]){
 	folder <- here::here(path_pacmap, dist_measure)
 	# Create folder for pacmap-file depending on the OD flow subset
 	if (!dir.exists(folder)) {
@@ -139,6 +129,7 @@ for(dist_measure in char_dist_measures){
 					stdout = "", stderr = "")
 
 }
+
 
 
 ################################################################################
