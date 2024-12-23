@@ -51,6 +51,7 @@ library(concaveman)
 library(bigmds)
 library(viridis)
 library(jsonlite)
+library(xtable)
 library(dplyr)
 ################################################################################
 # Postgresql-DB connection

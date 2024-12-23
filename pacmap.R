@@ -34,14 +34,14 @@ sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 dist_filter <- 1000
-#int_kw <- c(9:11)
-int_wday <- c(1:4)
-int_hours <- c(5:9)
+int_kw <- c(9:10)
+#int_wday <- c(1:4)
+#int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
-	#filter(week %in% int_kw) %>%
+	filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
-	filter(hour %in% int_hours) %>%
-	filter(weekday %in% int_wday) %>% 
+	#filter(hour %in% int_hours) %>%
+	#filter(weekday %in% int_wday) %>% 
 	mutate(origin_id = as.integer(origin_id),
 				 dest_id = as.integer(dest_id))
 sf_trips_sub$flow_id <- 1:nrow(sf_trips_sub)
@@ -51,33 +51,51 @@ gc()
 char_schema <- paste0(char_data, 
 											"_min", 
 											dist_filter,
-											"_hours",
-											paste0(int_hours, collapse = "_"),
-											"_wdays",
-											paste0(int_wday, collapse = "_"))
+											# "m_hours",
+											# paste0(int_hours, collapse = "_"),
+											# "_wdays",
+											# paste0(int_wday, collapse = "_")
+											#,
+											"_kw",
+											paste0(int_kw, collapse = "_")
+											)
 
 psql1_create_schema(con, char_schema)
 
 
 st_write(sf_trips_sub, con, Id(schema=char_schema, 
 															 table = "data"))
+
+
+
 path_pacmap <- here::here(path_python, char_schema)
 ################################################################################
 # 2. Calculate different distance measures between all OD flows 
 ################################################################################
 # Calculate the euclidean distance between all OD flows
 main_calc_diff_flow_distances(char_schema = char_schema,
-															char_trips = "data",
 															n = nrow(sf_trips_sub),
 															cores = int_cores)
 
 # Create an index on flow_id_i
-query <- paste0("DROP INDEX IF EXISTS ", char_schema, ".flow_distances_flow_id_i_flow_id_j_idx;")
+query <- paste0("DROP INDEX IF EXISTS ", char_schema, ".flow_distances_flow_id_i_flow_id_j;")
 dbExecute(con, query)
 
 query <- paste0("CREATE INDEX ON ",
 								char_schema, ".flow_distances (flow_id_i, flow_id_j);")
 dbExecute(con, query)
+
+# psql1_norm_col(con = con,
+# 							 char_schema = char_schema,
+# 							 char_col = "flow_euclid",
+# 							 cores = int_cores,
+# 							 int_min = 0,
+# 							 int_max = 2,
+# 							 n = nrow(sf_trips_sub))
+
+
+
+
 
 main_nd_dist_mat_cpu(char_schema = char_schema,
 										 char_network = char_network,
@@ -88,11 +106,10 @@ main_nd_dist_mat_cpu(char_schema = char_schema,
 char_dist_measures <- c("flow_manhattan_pts_euclid",
 												"flow_chebyshev_pts_euclid",
 												"flow_euclid",
-												"flow_euclid_norm",
-												"flow_manhatten_pts_network")
+												"flow_manhattan_pts_network")
 #sudo chown -R postgres /home/sebastiandengel/snn_flow/python --> run in terminal
 
-for(dist_measure in char_dist_measures[5]){
+for(dist_measure in char_dist_measures){
 	folder <- here::here(path_pacmap, dist_measure)
 	# Create folder for pacmap-file depending on the OD flow subset
 	if (!dir.exists(folder)) {
@@ -144,62 +161,73 @@ df_2_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[2], np)
 df_3_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[3], np)
 df_4_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[4], np)
 
-pacmap_density_plot(df_1_embedding)
-pacmap_density_plot(df_2_embedding)
-pacmap_density_plot(df_3_embedding)
-pacmap_density_plot(df_4_embedding)
 
-int_minpts <- 10
-list_embedding_1 <- py_hdbscan_dbcv(np = np, 
-								df_embedding = df_1_embedding,
-								minpts = int_minpts)
-list_embedding_1
-list_embedding_2 <- py_hdbscan_dbcv(np = np, 
-																		df_embedding = df_2_embedding,
-																		minpts = int_minpts)
-list_embedding_2
-list_embedding_3 <- py_hdbscan_dbcv(np = np, 
-																		df_embedding = df_3_embedding,
-																		minpts = int_minpts)
-list_embedding_3
-list_embedding_4 <- py_hdbscan_dbcv(np = np, 
-																		df_embedding = df_4_embedding,
-																		minpts = int_minpts)
-list_embedding_4
+p1 <- pacmap_density_plot(df_1_embedding)
+ggsave(here::here(path_pacmap, paste0(char_dist_measures[1],
+							"_pacmap.pdf")), plot = p1)
+p2 <- pacmap_density_plot(df_2_embedding)
+ggsave(here::here(path_pacmap, paste0(char_dist_measures[2],
+																			"_pacmap.pdf")), plot = p2)
+p3 <- pacmap_density_plot(df_3_embedding)
+ggsave(here::here(path_pacmap, paste0(char_dist_measures[3],
+																			"_pacmap.pdf")), plot = p3)
+p4 <- pacmap_density_plot(df_4_embedding)
+ggsave(here::here(path_pacmap, paste0(char_dist_measures[4],
+																			"_pacmap.pdf")), plot = p4)
 
-# int_k <- 12
-# int_eps <- 6
-# int_minpts <- 10
-# hdbcsan_res_euclid <- dbscan::hdbscan(df_euclid_embedding[,c(1:2)], minPts = int_minpts)
-# hdbcsan_res_nd <- dbscan::hdbscan(df_nd_embedding[,c(1:2)], minPts = int_minpts)
-# snn_res_euclid <- dbscan::sNNclust(df_euclid_embedding[,c(1:2)], 
-# 																	 k = int_k,
-# 																	 eps = int_eps,
-# 																	 minPts = int_minpts)
-# 
-# snn_res_nd <- dbscan::sNNclust(df_nd_embedding[,c(1:2)], 
-# 															 k = int_k,
-# 															 eps = int_eps,
-# 															 minPts = int_minpts)
+for(i in 6:100){
+	int_minpts <- i
+	list_embedding_1 <- py_hdbscan_dbcv(np = np, 
+																			df_embedding = df_1_embedding,
+																			minpts = int_minpts)
+	
+	# df_1_embedding_cl <- list_embedding_1$df_cluster %>%
+	# 	filter(cluster != 0)
+	# pacmap_density_plot(df_1_embedding_cl)
+	list_embedding_2 <- py_hdbscan_dbcv(np = np, 
+																			df_embedding = df_2_embedding,
+																			minpts = int_minpts)
+	list_embedding_2
+	list_embedding_3 <- py_hdbscan_dbcv(np = np, 
+																			df_embedding = df_3_embedding,
+																			minpts = int_minpts)
+	list_embedding_3
+	list_embedding_4 <- py_hdbscan_dbcv(np = np, 
+																			df_embedding = df_4_embedding,
+																			minpts = int_minpts)
+	
+	# df_4_embedding_cl <- list_embedding_4$df_cluster %>%
+	# 	filter(cluster != 0)
+	# pacmap_density_plot(df_4_embedding_cl)
+	
+	
+	all_embeddings <- list(list_embedding_1, 
+												 list_embedding_2, 
+												 list_embedding_3, 
+												 list_embedding_4)
+	
+	# Konvertiere die Listen in einen DataFrame
+	n <- nrow(sf_trips_sub)
+	median_l <- round(median(sf_trips_sub$trip_distance)) %>% as.integer
+	df_res <- do.call(rbind, lapply(all_embeddings, as.data.frame))
+	df_res$n <- n
+	df_res$median_l <- median_l
+	df_res$kw <- paste0(min(int_kw), "-", max(int_kw))
+	df_res$h <- paste0(min(int_hours), "-", max(int_hours))
+	df_res$wd <- paste0(min(int_wday), "-", max(int_wday))
+	df_res$dist <- c("m_e", "c_e", "e", "m_n")
+	df_res$minpts <- int_minpts
+	df_res <- df_res %>%
+		select(kw, wd, h, n, median_l, dist, n_cl, n_noise, dbcv, cdbw, comp, coh, sep)
+	df_res
+	tex_file <- here::here(path_python, char_schema, paste0("minpts_", int_minpts, ".tex"))
+	sink(tex_file)
+	print(xtable(df_res, caption = paste0("HDBSCAN, \\textit{minpts} = ", int_minpts)),
+				type = "latex", include.rownames = FALSE)
+	sink()
+}
 
 
-
-
-list_py_hdbscan$dbcv_euclid
-list_py_hdbscan$dbcv_nd
-
-py_get_dbcv(np,
-						df_euclid_embedding,
-						df_nd_embedding,
-						cluster_labels_euclid = hdbcsan_res_euclid$cluster,
-						cluster_labels_nd = hdbcsan_res_nd$cluster)
-
-
-
-
-
-create_pacmap_plotly_with_clusters(list_py_hdbscan$df_cluster_euclid)
-create_pacmap_plotly_with_clusters(list_py_hdbscan$df_cluster_nd)
 ################################################################################
 # 5. Add cluster to PaCMAP
 ################################################################################
@@ -222,36 +250,6 @@ if (nrow(df_snn) != nrow(df_embedding)){
 }
 
 
-
-################################################################################
-# 5. CDBW
-################################################################################
-# df_snn_cdbw <- st_coordinates(sf_snn) %>% as.data.frame()
-# df_snn_cdbw <- df_snn_cdbw %>%
-# 	mutate(row_id = row_number(), .by = L1) %>%   # Zeilen-ID pro Gruppe
-# 	pivot_wider(
-# 		names_from = row_id,
-# 		values_from = c(X, Y),
-# 		names_prefix = ""
-# 	) %>%
-# 	rename(ox = X_1, oy = Y_1, dx = X_2, dy = Y_2) %>%
-# 	as.data.frame() %>%
-# 	rename(flow_id = L1)
-# 
-# df_snn_cdbw$cluster_pred <- df_snn$cluster_pred
-# 
-# cdbv_idx_euclid <- cdbw(x = df_snn_cdbw[,c(2:5)],
-# 												clustering = df_snn_cdbw[,6])
-# cdbv_idx_euclid
-# df_pacmap <- df_embedding %>%
-# 	left_join(df_snn %>% select(flow_id, cluster_pred),
-# 						by = c("id" = "flow_id"))
-# 
-# 
-# cdbv_idx_pacmap <- cdbw(x = df_pacmap[,c(1,2)],
-# 												clustering = df_pacmap[,4])
-# 
-# cdbv_idx_pacmap
 
 ################################################################################
 # 6. Clustering of PaCMAP dimension reduced data

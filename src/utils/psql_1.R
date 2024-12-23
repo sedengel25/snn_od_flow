@@ -384,8 +384,8 @@ psql1_get_mapped_trip_data <- function(con) {
 
 psql1_get_schemas <- function(con) {
 	query <- paste0("SELECT schema_name
-FROM information_schema.schemata
-WHERE schema_name NOT IN ('public', 'pg_catalog', 'information_schema')
+	FROM information_schema.schemata
+	WHERE schema_name NOT IN ('public', 'pg_catalog', 'information_schema')
   AND schema_name NOT LIKE 'pg_toast%'
   AND schema_name NOT LIKE 'pg_temp%';")
 	
@@ -530,4 +530,156 @@ psql1_create_schema <- function(con, char_schema) {
   query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
   cat(query)
   dbExecute(con, query)
+}
+
+
+psql1_calc_distances <- function(char_schema, id_start, id_end, local_con) {
+	query <- paste0("INSERT INTO ", char_schema, ".flow_distances
+      (
+          flow_id_i,
+          flow_id_j,
+          flow_manhattan_pts_euclid,
+          flow_chebyshev_pts_euclid,
+          flow_euclid,
+          length_similarity,
+  				cosine_similarity
+      )
+      SELECT
+          a.flow_id AS flow_id_i,
+          b.flow_id AS flow_id_j,
+          
+          -- Manhattan distance between flows based on euclidean OD points distance
+          CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) +
+          CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER) AS flow_manhatten_pts_euclid,
+  
+          -- Chebyshev distance between flows based on euclidean OD points distance
+          GREATEST(
+        		CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER),
+        		CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER)
+          ) AS flow_chebyshev_pts_euclid,
+  				
+  				-- Normalized euclidean distance in the 4D space
+  				--ROUND(
+  				--    (SQRT(
+  				--        1 * (
+  				--            POW(ST_X(a.origin_geom) - ST_X(b.origin_geom), 2) +
+  				--            POW(ST_Y(a.origin_geom) - ST_Y(b.origin_geom), 2)
+  				--        ) +
+  				--        1 * (
+  				--            POW(ST_X(a.dest_geom) - ST_X(b.origin_geom), 2) +
+  				--            POW(ST_Y(a.dest_geom) - ST_Y(b.dest_geom), 2)
+  				--        )
+  				--    ) / (a.trip_distance * b.trip_distance))::numeric, 6
+  				--) AS flow_euclid_norm,
+  			        
+  				-- Euclidean distance in the 4D space
+  				CAST(ROUND(
+  	            SQRT(
+  	                1 * (
+  	                    POW(ST_X(a.origin_geom) - ST_X(b.origin_geom), 2) +
+  	                    POW(ST_Y(a.origin_geom) - ST_Y(b.origin_geom), 2)
+  	                ) +
+  	                1 * (
+  	                    POW(ST_X(a.dest_geom) - ST_X(b.dest_geom), 2) +
+  	                    POW(ST_Y(a.dest_geom) - ST_Y(b.dest_geom), 2)
+  	                )
+  	            )
+  	        ) AS INTEGER) AS flow_euclid,
+  	        
+  	      -- Length similarity
+  				CAST(ROUND(ABS(a.trip_distance - b.trip_distance)) AS INTEGER) AS length_similarity,
+  				-- Dot product of the vectors
+          1- ((
+              ((ST_X(b.origin_geom) - ST_X(b.dest_geom)) * (ST_X(a.origin_geom) - ST_X(a.dest_geom))) +
+              ((ST_Y(b.origin_geom) - ST_Y(b.dest_geom)) * (ST_Y(a.origin_geom) - ST_Y(a.dest_geom)))
+          ) /
+  				(
+                  SQRT(POW(ST_X(a.origin_geom) - ST_X(a.dest_geom), 2) + 
+                  POW(ST_Y(a.origin_geom) - ST_Y(a.dest_geom), 2)) *
+                  SQRT(POW(ST_X(b.origin_geom) - ST_X(b.dest_geom), 2) + 
+                  POW(ST_Y(b.origin_geom) - ST_Y(b.dest_geom), 2))
+          ))AS cosine_similarity
+  
+  				
+  
+      FROM ", char_schema, ".data a
+      JOIN ", char_schema, ".data b
+      ON a.flow_id < b.flow_id
+      WHERE a.flow_id BETWEEN ", id_start, " AND ", id_end, ";")
+	
+	dbExecute(local_con, query)
+}
+
+
+
+
+psql1_norm_col <- function(con, char_schema, char_col, cores, int_min, int_max, n){
+
+
+	query <- paste0("
+    SELECT
+        MIN(", char_col, ") AS min_val,
+        MAX(", char_col, ") AS max_val
+    FROM ", char_schema, ".flow_distances;")
+
+	cat(query, "\n")
+	result <- dbGetQuery(con, query)
+
+
+	min_val <- result$min_val
+	max_val <- result$max_val
+	print(min_val)
+	print(max_val)
+
+	query <- paste0("ALTER TABLE ", char_schema, ".flow_distances DROP COLUMN
+	IF EXISTS ", char_col, "_normed_", int_min, "_", int_max, ";")
+	cat(query, "\n")
+	dbExecute(con, query)
+
+
+	query <- paste0("
+    ALTER TABLE ", char_schema, ".flow_distances
+    ADD COLUMN ", char_col, "_normed_", int_min, "_", int_max, " DOUBLE PRECISION;")
+	cat(query, "\n")
+	dbExecute(con, query)
+	t1 <- proc.time()
+	chunks <- r1_create_chunks(cores = cores, n = n)
+	res <- parallel::mclapply(1:length(chunks), function(i) {
+
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE)
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+
+	# 	query <- paste0("
+	#     UPDATE ", char_schema, ".flow_distances
+	#     SET ", char_col, "_normed_", int_min, "_", int_max, " =
+	#     ", int_min, " + ((", char_col, "::DOUBLE PRECISION - ", min_val, ") /
+	#     NULLIF((", max_val, "::DOUBLE PRECISION - ", min_val, "), 0)) * (", int_max, " - ", int_min, ")
+	#     WHERE flow_id_i BETWEEN ", id_start, " AND ", id_end, ";")
+		
+		query <- paste0("
+		    SELECT
+		        flow_id_i,
+		        flow_id_j,
+		        ", int_min, " + ((", char_col, "::DOUBLE PRECISION - ", min_val, ") /
+		        NULLIF((", max_val, "::DOUBLE PRECISION - ", min_val, "), 0)) * (", int_max, " - ", int_min, ") AS 
+		        ", char_col, "_normed_", int_min, "_", int_max, "
+		    FROM ", char_schema, ".flow_distances
+		    WHERE flow_id_i BETWEEN ", id_start, " AND ", id_end, ";
+		")
+		cat(query)
+		
+
+		dbGetQuery(local_con, query)
+
+	}, mc.cores = cores)
+	t2 <- proc.time()
+	print(t2-t1)
+	return(res)
 }

@@ -140,26 +140,22 @@ main_calc_diff_flow_distances <- function(char_schema, char_trips, n, cores){
 	
 	
 	query <- paste0("DROP INDEX IF EXISTS ", paste0(char_schema,
-																									".",
-																									char_trips,
-																									"_origin_geom_idx"))
+																									".data_origin_geom_idx"))
 	cat(query,"\n")
 	dbExecute(con, query)
 	
 	
-	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".data"),
 									" USING GIST(origin_geom);")
 	cat(query,"\n")
 	dbExecute(con, query)
 	
 	query <- paste0("DROP INDEX IF EXISTS ", paste0(char_schema,
-																									".",
-																									char_trips,
-																									"_dest_geom_idx"))
+																									".data_dest_geom_idx"))
 	cat(query,"\n")
 	dbExecute(con, query)
 	
-	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".", char_trips),
+	query <- paste0("CREATE INDEX ON ", paste0(char_schema, ".data"),
 									" USING GIST(dest_geom);")
 	cat(query,"\n")
 	dbExecute(con, query)
@@ -176,6 +172,8 @@ main_calc_diff_flow_distances <- function(char_schema, char_trips, n, cores){
         				  flow_chebyshev_pts_euclid INTEGER,
         			    flow_euclid_norm DOUBLE PRECISION,
         					flow_euclid INTEGER,
+        					length_similarity INTEGER,
+        					cosine_similarity DOUBLE PRECISION,
 									flow_manhattan_pts_network INTEGER);")
 	cat(query)
 	dbExecute(con, query)
@@ -197,63 +195,12 @@ main_calc_diff_flow_distances <- function(char_schema, char_trips, n, cores){
 		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
 		id_end <- chunks[i]
 		
-		query <- paste0("INSERT INTO ", char_schema, ".flow_distances
-    (
-        flow_id_i,
-        flow_id_j,
-        flow_manhattan_pts_euclid,
-        flow_chebyshev_pts_euclid,
-        flow_euclid_norm,
-        flow_euclid
-    )
-    SELECT
-        a.flow_id AS flow_id_i,
-        b.flow_id AS flow_id_j,
-        
-        -- Manhattan distance between flows based on euclidean OD points distance
-        CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) +
-        CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER) AS flow_manhatten_pts_euclid,
-
-        -- Chebyshev distance between flows based on euclidean OD points distance
-        GREATEST(
-      		CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER),
-      		CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER)
-        ) AS flow_chebyshev_pts_euclid,
-				
-				-- Normalized euclidean distance in the 4D space
-				ROUND(
-				    (SQRT(
-				        1 * (
-				            POW(ST_X(a.origin_geom) - ST_X(b.origin_geom), 2) +
-				            POW(ST_Y(a.origin_geom) - ST_Y(b.origin_geom), 2)
-				        ) +
-				        1 * (
-				            POW(ST_X(a.dest_geom) - ST_X(b.origin_geom), 2) +
-				            POW(ST_Y(a.dest_geom) - ST_Y(b.dest_geom), 2)
-				        )
-				    ) / (a.trip_distance * b.trip_distance))::numeric, 6
-				) AS flow_euclid_norm,
-			        
-				-- Euclidean distance in the 4D space
-				CAST(ROUND(
-	            SQRT(
-	                1 * (
-	                    POW(ST_X(a.origin_geom) - ST_X(b.origin_geom), 2) +
-	                    POW(ST_Y(a.origin_geom) - ST_Y(b.origin_geom), 2)
-	                ) +
-	                1 * (
-	                    POW(ST_X(a.dest_geom) - ST_X(b.dest_geom), 2) +
-	                    POW(ST_Y(a.dest_geom) - ST_Y(b.dest_geom), 2)
-	                )
-	            )
-	        ) AS INTEGER) AS flow_euclid
-
-    FROM ", paste0(char_schema, ".", char_trips), " a
-    JOIN ", paste0(char_schema, ".", char_trips), " b
-    ON a.flow_id < b.flow_id
-    WHERE a.flow_id BETWEEN ", id_start, " AND ", id_end, ";")
+		psql1_calc_distances(char_schema = char_schema,
+												 id_start = id_start,
+												 id_end = id_end,
+												 local_con = local_con)
 		
-		dbExecute(local_con, query)
+
 		
 	}, mc.cores = cores)
 	
@@ -272,230 +219,23 @@ main_nd_dist_mat_cpu <- function(char_schema,
 																 n, 
 																 cores){
 	
-	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".origin_nd"))
-	dbExecute(con, query)
-
-	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".dest_nd"))
-	dbExecute(con, query)
-
-
-	query <- paste0("CREATE TABLE ", paste0(char_schema, ".origin_nd"),
-									" (flow_id_i INTEGER,
-									flow_id_j INTEGER,
-									flow_manhattan_pts_network INTEGER);")
-	cat(query)
-	dbExecute(con, query)
-
-
-	query <- paste0("CREATE TABLE ", paste0(char_schema, ".dest_nd"),
-									" (flow_id_i INTEGER,
-									flow_id_j INTEGER,
-									flow_manhattan_pts_network INTEGER);")
-	cat(query)
-	dbExecute(con, query)
 	
-	### Caluclate ND between origin points ---------------------------------------
-	t1 <- proc.time()
+
+	
 	chunks <- r1_create_chunks(cores = cores, n = n)
-	print(chunks)
-	parallel::mclapply(1:length(chunks), function(i) {
+	calc_nd_between_od_points(char_schema = char_schema,
+														cores = cores,
+														n = n,
+														char_network = char_network,
+														char_dist_mat = char_dist_mat,
+														chunks = chunks)
 
-			# Lokale PostgreSQL-Verbindung in jedem Worker
-			local_con <- dbConnect(Postgres(),
-														 dbname = dbname,
-														 host = host,
-														 user = user,
-														 password = pw,
-														 sslmode = "require")
-			on.exit(dbDisconnect(local_con), add = TRUE)
-
-			id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
-			id_end <- chunks[i]
-
-
-			t1 <- proc.time()
-			print(chunks)
-			query <- paste0(
-				"INSERT INTO ", char_schema, ".origin_nd SELECT m1.flow_id as flow_id_i,
-																					 m2.flow_id as flow_id_j, ",
-				"LEAST(",
-				"CAST(m1.d_dist_to_start + m2.d_dist_to_start + COALESCE(pi_pk.m, 0) AS INT), ",
-				"CAST(m1.d_dist_to_end + m2.d_dist_to_end + COALESCE(pj_pl.m, 0) AS INT), ",
-				"CAST(m1.d_dist_to_start + m2.d_dist_to_end + COALESCE(pi_pl.m, 0) AS INT), ",
-				"CAST(m1.d_dist_to_end + m2.d_dist_to_start + COALESCE(pj_pk.m, 0) AS INT)",
-				") AS flow_manhattan_pts_network ",
-				"FROM ", char_schema, ".data  m1 ",
-				"CROSS JOIN ", char_schema, ".data m2 ",
-				"INNER JOIN ", char_network, " e_ij ON m1.origin_id = e_ij.id ",
-				"INNER JOIN ", char_network, " e_kl ON m2.origin_id = e_kl.id ",
-				"INNER JOIN ", char_dist_mat, " pi_pk ON pi_pk.source = LEAST(e_ij.source, e_kl.source) AND
-				pi_pk.target = GREATEST(e_ij.source, e_kl.source) ",
-				"INNER JOIN ", char_dist_mat, " pj_pl ON pj_pl.source = LEAST(e_ij.target, e_kl.target) AND
-				pj_pl.target = GREATEST(e_ij.target, e_kl.target) ",
-				"INNER JOIN ", char_dist_mat, " pi_pl ON pi_pl.source = LEAST(e_ij.source, e_kl.target) AND
-				pi_pl.target = GREATEST(e_ij.source, e_kl.target) ",
-				"INNER JOIN ", char_dist_mat, " pj_pk ON pj_pk.source = LEAST(e_ij.target, e_kl.source) AND
-				pj_pk.target = GREATEST(e_ij.target, e_kl.source) ",
-				"WHERE m1.flow_id >= ", id_start,
-				" AND m1.flow_id <= ", id_end,
-				" AND m1.flow_id < m2.flow_id	AND m1.origin_id != m2.origin_id;")
-			dbExecute(local_con, query)
-
-		}, mc.cores = cores)
-
-	t2 <- proc.time()
-	diff_time <- t2-t1
-	diff_time <- diff_time[3] %>% as.numeric
-	cat("Time for calculating ND between origin points: ", diff_time, "\n")
-
-	### Caluclate ND between dest points ---------------------------------------
 	t1 <- proc.time()
 	print(chunks)
-	parallel::mclapply(1:length(chunks), function(i) {
+	insert_flow_nd_in_distance_table(char_schema = char_schema,
+																	 chunks = chunks,
+																	 cores = cores)
 
-		# Lokale PostgreSQL-Verbindung in jedem Worker
-		local_con <- dbConnect(Postgres(),
-													 dbname = dbname,
-													 host = host,
-													 user = user,
-													 password = pw,
-													 sslmode = "require")
-		on.exit(dbDisconnect(local_con), add = TRUE)
-
-		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
-		id_end <- chunks[i]
-
-
-		query <- paste0(
-			"INSERT INTO ", char_schema, ".dest_nd SELECT m1.flow_id as flow_id_i,
-																				 m2.flow_id as flow_id_j, ",
-			"LEAST(",
-			"CAST(m1.d_dist_to_start + m2.d_dist_to_start + COALESCE(pi_pk.m, 0) AS INT), ",
-			"CAST(m1.d_dist_to_end + m2.d_dist_to_end + COALESCE(pj_pl.m, 0) AS INT), ",
-			"CAST(m1.d_dist_to_start + m2.d_dist_to_end + COALESCE(pi_pl.m, 0) AS INT), ",
-			"CAST(m1.d_dist_to_end + m2.d_dist_to_start + COALESCE(pj_pk.m, 0) AS INT)",
-			") AS flow_manhattan_pts_network ",
-			"FROM ", char_schema, ".data  m1 ",
-			"CROSS JOIN ", char_schema, ".data m2 ",
-			"INNER JOIN ", char_network, " e_ij ON m1.dest_id = e_ij.id ",
-			"INNER JOIN ", char_network, " e_kl ON m2.dest_id = e_kl.id ",
-			"INNER JOIN ", char_dist_mat, " pi_pk ON pi_pk.source = LEAST(e_ij.source, e_kl.source) AND
-			pi_pk.target = GREATEST(e_ij.source, e_kl.source) ",
-			"INNER JOIN ", char_dist_mat, " pj_pl ON pj_pl.source = LEAST(e_ij.target, e_kl.target) AND
-			pj_pl.target = GREATEST(e_ij.target, e_kl.target) ",
-			"INNER JOIN ", char_dist_mat, " pi_pl ON pi_pl.source = LEAST(e_ij.source, e_kl.target) AND
-			pi_pl.target = GREATEST(e_ij.source, e_kl.target) ",
-			"INNER JOIN ", char_dist_mat, " pj_pk ON pj_pk.source = LEAST(e_ij.target, e_kl.source) AND
-			pj_pk.target = GREATEST(e_ij.target, e_kl.source) ",
-			"WHERE m1.flow_id >= ", id_start,
-			" AND m1.flow_id <= ", id_end,
-			" AND m1.flow_id < m2.flow_id	AND m1.dest_id != m2.dest_id;")
-		dbExecute(local_con, query)
-
-	}, mc.cores = cores)
-
-	t2 <- proc.time()
-	diff_time <- t2-t1
-	diff_time <- diff_time[3] %>% as.numeric
-	cat("Time for calculating ND between dest points: ", diff_time, "\n")
-
-	query <- paste0("DROP INDEX IF EXISTS ", char_schema, 
-									".origin_nd_flow_id_i_flow_id_j_idx;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	query <- paste0("CREATE INDEX ON ",
-									char_schema, ".origin_nd (flow_id_i, flow_id_j);")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	query <- paste0("DROP INDEX IF EXISTS ", char_schema, 
-									".dest_nd_flow_id_i_flow_id_j_idx;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	query <- paste0("CREATE INDEX ON ",
-									char_schema, ".dest_nd (flow_id_i, flow_id_j);")
-	cat(query, "\n")
-	dbExecute(con, query)
-
-	query <- paste0("DROP TABLE IF EXISTS ",
-									char_schema, ".new_flow_distances")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	query <- paste0("CREATE TABLE ",
-									char_schema, ".new_flow_distances AS
-		SELECT 
-		f.*,
-		NULL::NUMERIC AS updated_flow_manhattan_pts_network
-		FROM ", char_schema, ".flow_distances f
-		WHERE false;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	
-	t1 <- proc.time()
-	print(chunks)
-	parallel::mclapply(1:length(chunks), function(i) {
-		
-		local_con <- dbConnect(Postgres(),
-													 dbname = dbname,
-													 host = host,
-													 user = user,
-													 password = pw,
-													 sslmode = "require")
-		on.exit(dbDisconnect(local_con), add = TRUE) 
-		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
-		id_end <- chunks[i]
-
-		
-		query <- paste0(
-			"INSERT INTO ", char_schema, ".new_flow_distances ",
-			"SELECT ",
-			"    f.*, ",
-			"    COALESCE(f.flow_manhattan_pts_network, 0) + ",
-			"    COALESCE(o.flow_manhattan_pts_network, 0) + ",
-			"    COALESCE(d.flow_manhattan_pts_network, 0) AS updated_flow_manhattan_pts_network ",
-			"FROM ", char_schema, ".flow_distances f ",
-			"LEFT JOIN ", char_schema, ".origin_nd o ",
-			"    ON f.flow_id_i = o.flow_id_i AND f.flow_id_j = o.flow_id_j ",
-			"LEFT JOIN ", char_schema, ".dest_nd d ",
-			"    ON f.flow_id_i = d.flow_id_i AND f.flow_id_j = d.flow_id_j ",
-			"WHERE f.flow_id_i BETWEEN ", id_start, " AND ", id_end, ";"
-		)
-		
-		dbExecute(local_con, query)
-		
-	}, mc.cores = cores)
-	
-	query <- paste0("DROP TABLE ", char_schema, ".flow_distances;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	query <- paste0("ALTER TABLE ", char_schema, ".new_flow_distances
-									RENAME TO flow_distances;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	
-	query <- paste0("ALTER TABLE ", char_schema, ".flow_distances
-									DROP COLUMN flow_manhattan_pts_network;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	
-	query <- paste0("ALTER TABLE ", char_schema, ".flow_distances
-									RENAME COLUMN updated_flow_manhattan_pts_network TO 
-									flow_manhattan_pts_network;")
-	cat(query, "\n")
-	dbExecute(con, query)
-	
-	
-	t2 <- proc.time()
-	diff_time <- t2-t1
-	diff_time <- diff_time[3] %>% as.numeric
-	cat("Time for adding OD_pts distances ", diff_time, "\n")
 	
 }
 
