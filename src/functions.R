@@ -827,6 +827,48 @@ create_pacmap_plotly_with_clusters <- function(df_pacmap) {
 
 
 
+
+
+# Documentation: create_pacmap_plotly_with_clusters
+# Usage: create_pacmap_plotly_with_clusters(df_embedding, df_cluster)
+# Description: Creates a plotyly with clsuters assigned to the pacmap
+# Args/Options: df_embedding, df_cluster
+# Returns: ...
+# Output: plotly
+# Action: ...
+create_pacmap_ggplot_with_clusters <- function(df_cluster, 
+																							 char_dist_measure,
+																							 minpts) {
+	
+	num_clusters <- length(unique(df_cluster$cluster))
+	num_cl_per_palette <- round(num_clusters/3)
+	colors1 <- hcl.colors(num_cl_per_palette, palette = "Dark2")
+	colors2 <- hcl.colors(num_cl_per_palette, palette = "Set3")
+	colors3 <- hcl.colors(num_cl_per_palette, palette = "Pastel1")
+	# Kombiniere die Farben
+	random_colors <- c(colors1, colors2, colors3)[1:num_clusters]
+	p <- ggplot(df_cluster 
+							%>% filter(cluster != 0)
+							, aes(x = x, y = y, color = factor(cluster))) +
+		geom_point(size = 1, alpha = 0.3) +
+		scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
+		labs(
+			title = paste0("PaCMAP | HDBSCAN | ", minpts, " | ", char_dist_measure),
+			x = "x",
+			y = "y"
+		) +
+		theme_minimal() +
+		theme(
+			legend.position = "none",
+			plot.title = element_text(hjust = 0.5, size = 16),
+			axis.title = element_text(size = 12)
+		)
+	
+	return(p)
+}
+
+
+
 py_get_dbcv <- function(np, 
 												df_euclid_embedding, 
 												df_nd_embedding, 
@@ -852,7 +894,6 @@ py_hdbscan_dbcv <- function(np,
 		as.character()
 	x <- np$array(df_embedding[, c(1:2)] %>% as.matrix())
 	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
-	print("Cluster with HDBSCAN")
 	hdbscan_res <- hdbscan_model$fit(x)
 	np_labels <- np$array(hdbscan_res$labels_, dtype = "int32")
 	number_cluster <- table(hdbscan_res$labels_) %>% length 
@@ -891,6 +932,23 @@ py_hdbscan_dbcv <- function(np,
 			 )
 	
 	return(invisible(res_list))
+}
+
+
+
+
+py_hdbscan <- function(np, 
+											 hdbscan,
+											 df_embedding, 
+											minpts) {
+	x <- np$array(df_embedding[, c(1:2)] %>% as.matrix())
+	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
+	hdbscan_res <- hdbscan_model$fit(x)
+	np_labels <- np$array(hdbscan_res$labels_, dtype = "int32")
+  df_cluster <- df_embedding
+  df_cluster$cluster <- hdbscan_res$labels_
+	df_cluster$cluster <- df_cluster$cluster + 1
+	return(df_cluster)
 }
 
 

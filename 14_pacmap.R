@@ -34,14 +34,14 @@ sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 dist_filter <- 1000
-int_kw <- c(9:10)
-#int_wday <- c(1:4)
-#int_hours <- c(16:18)
+#int_kw <- c(9:10)
+int_wday <- c(1:4)
+int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
-	filter(week %in% int_kw) %>%
+	#filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
-	#filter(hour %in% int_hours) %>%
-	#filter(weekday %in% int_wday) %>% 
+	filter(hour %in% int_hours) %>%
+	filter(weekday %in% int_wday) %>% 
 	mutate(origin_id = as.integer(origin_id),
 				 dest_id = as.integer(dest_id))
 sf_trips_sub$flow_id <- 1:nrow(sf_trips_sub)
