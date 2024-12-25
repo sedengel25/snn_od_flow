@@ -33,12 +33,12 @@ sf_trips$hour <- lubridate::hour(sf_trips$start_datetime)
 sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 1000
-#int_kw <- c(9:10)
+dist_filter <- 100
+int_kw <- c(8:10)
 int_wday <- c(1:4)
-int_hours <- c(16:18)
+int_hours <- c(5:9)
 sf_trips_sub <- sf_trips %>%
-	#filter(week %in% int_kw) %>%
+	filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
 	filter(hour %in% int_hours) %>%
 	filter(weekday %in% int_wday) %>% 
@@ -51,11 +51,11 @@ gc()
 char_schema <- paste0(char_data, 
 											"_min", 
 											dist_filter,
-											# "m_hours",
-											# paste0(int_hours, collapse = "_"),
-											# "_wdays",
-											# paste0(int_wday, collapse = "_")
-											#,
+											"m_hours",
+											paste0(int_hours, collapse = "_"),
+											"_wdays",
+											paste0(int_wday, collapse = "_")
+											,
 											"_kw",
 											paste0(int_kw, collapse = "_")
 											)
@@ -164,7 +164,7 @@ df_4_embedding <- load_pacmap_embedding(path_pacmap, char_dist_measures[4], np)
 
 p1 <- pacmap_density_plot(df_1_embedding)
 ggsave(here::here(path_pacmap, paste0(char_dist_measures[1],
-							"_pacmap.pdf")), plot = p1)
+																			"_pacmap.pdf")), plot = p1)
 p2 <- pacmap_density_plot(df_2_embedding)
 ggsave(here::here(path_pacmap, paste0(char_dist_measures[2],
 																			"_pacmap.pdf")), plot = p2)
@@ -174,134 +174,3 @@ ggsave(here::here(path_pacmap, paste0(char_dist_measures[3],
 p4 <- pacmap_density_plot(df_4_embedding)
 ggsave(here::here(path_pacmap, paste0(char_dist_measures[4],
 																			"_pacmap.pdf")), plot = p4)
-
-for(i in 6:100){
-	int_minpts <- i
-	list_embedding_1 <- py_hdbscan_dbcv(np = np, 
-																			df_embedding = df_1_embedding,
-																			minpts = int_minpts)
-	
-	# df_1_embedding_cl <- list_embedding_1$df_cluster %>%
-	# 	filter(cluster != 0)
-	# pacmap_density_plot(df_1_embedding_cl)
-	list_embedding_2 <- py_hdbscan_dbcv(np = np, 
-																			df_embedding = df_2_embedding,
-																			minpts = int_minpts)
-	list_embedding_2
-	list_embedding_3 <- py_hdbscan_dbcv(np = np, 
-																			df_embedding = df_3_embedding,
-																			minpts = int_minpts)
-	list_embedding_3
-	list_embedding_4 <- py_hdbscan_dbcv(np = np, 
-																			df_embedding = df_4_embedding,
-																			minpts = int_minpts)
-	
-	# df_4_embedding_cl <- list_embedding_4$df_cluster %>%
-	# 	filter(cluster != 0)
-	# pacmap_density_plot(df_4_embedding_cl)
-	
-	
-	all_embeddings <- list(list_embedding_1, 
-												 list_embedding_2, 
-												 list_embedding_3, 
-												 list_embedding_4)
-	
-	# Konvertiere die Listen in einen DataFrame
-	n <- nrow(sf_trips_sub)
-	median_l <- round(median(sf_trips_sub$trip_distance)) %>% as.integer
-	df_res <- do.call(rbind, lapply(all_embeddings, as.data.frame))
-	df_res$n <- n
-	df_res$median_l <- median_l
-	df_res$kw <- paste0(min(int_kw), "-", max(int_kw))
-	df_res$h <- paste0(min(int_hours), "-", max(int_hours))
-	df_res$wd <- paste0(min(int_wday), "-", max(int_wday))
-	df_res$dist <- c("m_e", "c_e", "e", "m_n")
-	df_res$minpts <- int_minpts
-	df_res <- df_res %>%
-		select(kw, wd, h, n, median_l, dist, n_cl, n_noise, dbcv, cdbw, comp, coh, sep)
-	df_res
-	tex_file <- here::here(path_python, char_schema, paste0("minpts_", int_minpts, ".tex"))
-	sink(tex_file)
-	print(xtable(df_res, caption = paste0("HDBSCAN, \\textit{minpts} = ", int_minpts)),
-				type = "latex", include.rownames = FALSE)
-	sink()
-}
-
-
-################################################################################
-# 5. Add cluster to PaCMAP
-################################################################################
-av_schemas <- psql1_get_schemas(con)
-char_schema <- av_schemas[4, "schema_name"]
-av_schema_tables <- psql1_get_tables_in_schema(con, char_schema)
-char_data <- av_schema_tables[3, "table_name"]
-
-sf_snn <- st_read(
-	con,
-	query = paste0("SELECT * FROM ",
-								 char_schema,
-								 ".",
-								 char_data)
-) 
-df_snn <- sf_snn %>% as.data.frame()
-
-if (nrow(df_snn) != nrow(df_embedding)){
-	stop("Embedding and clsuter dataset have different dimensions")
-}
-
-
-
-################################################################################
-# 6. Clustering of PaCMAP dimension reduced data
-################################################################################
-int_k <- 14
-int_eps <- 7
-int_minpts <- 9
-df_pacmap_snn <- dbscan::sNNclust(df_embedding[,1:2], 
-				 k = int_k,
-				 eps = int_eps,
-				 minPts = int_minpts)
-
-df_pacmap_snn$cluster %>% unique %>% length
-
-df_pacmap$cluster_pred_snn_pacmap <- df_pacmap_snn$cluster
-
-p <- ggplot(df_pacmap 
-						%>% filter(cluster_pred_snn_pacmap != 0)
-						, aes(x = x, y = y, color = factor(cluster_pred_snn_pacmap))) +
-	geom_point(size = 1, alpha = 0.3) +
-	scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
-	labs(
-		title = "PaCMAP by Clusters",
-		x = "x",
-		y = "y"
-	) +
-	theme_minimal() +
-	theme(
-		legend.position = "none",
-		plot.title = element_text(hjust = 0.5, size = 16),
-		axis.title = element_text(size = 12)
-	)
-
-
-# Interaktives Plotly-Plot
-ggplotly(p, tooltip = c("x", "y", "color"))
-cdbw(x = df_pacmap[,c(1,2)],
-		 clustering = df_pacmap[,5])
-
-
-
-sf_pacmap_snn <- df_snn %>%
-	left_join(df_pacmap %>% select(id, cluster_pred_snn_pacmap), by = c("flow_id" = "id")) %>%
-	st_as_sf()
-
-char_table <- paste0("pacmap_snn_k",
-										 int_k,
-										 "_eps",
-										 int_eps,
-										 "_minpts",
-										 int_minpts)
-
-
-st_write(sf_pacmap_snn, con, Id(schema=char_schema, 
-												 table = char_table))

@@ -223,7 +223,14 @@ main_nd_dist_mat_cpu <- function(char_schema,
 
 	
 	chunks <- r1_create_chunks(cores = cores, n = n)
-	calc_nd_between_od_points(char_schema = char_schema,
+	# calc_nd_between_od_points(char_schema = char_schema,
+	# 													cores = cores,
+	# 													n = n,
+	# 													char_network = char_network,
+	# 													char_dist_mat = char_dist_mat,
+	# 													chunks = chunks)
+	
+	calc_nd2_between_od_points(char_schema = char_schema,
 														cores = cores,
 														n = n,
 														char_network = char_network,

@@ -948,8 +948,12 @@ py_hdbscan <- function(np,
   df_cluster <- df_embedding
   df_cluster$cluster <- hdbscan_res$labels_
 	df_cluster$cluster <- df_cluster$cluster + 1
+	df_cluster$flow_id <- 1:nrow(df_cluster)
 	return(df_cluster)
 }
+
+
+
 
 
 
@@ -1144,6 +1148,165 @@ calc_nd_between_od_points <- function(char_schema,
 	dbExecute(con, query)
 	
 
+	dbExecute(con, query)
+}
+
+
+
+
+calc_nd2_between_od_points <- function(char_schema, 
+																			cores, 
+																			n, 
+																			char_network, 
+																			char_dist_mat,
+																			chunks) {
+	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".origin_nd"))
+	dbExecute(con, query)
+	
+	query <- paste0("DROP TABLE IF EXISTS ", paste0(char_schema, ".dest_nd"))
+	dbExecute(con, query)
+	
+	query <- paste0("CREATE TABLE ", paste0(char_schema, ".origin_nd"),
+									" (flow_id_i INTEGER,\n                    flow_id_j INTEGER,\n                    flow_manhattan_pts_network INTEGER);")
+	cat(query)
+	dbExecute(con, query)
+	
+	query <- paste0("CREATE TABLE ", paste0(char_schema, ".dest_nd"),
+									" (flow_id_i INTEGER,\n                    flow_id_j INTEGER,\n                    flow_manhattan_pts_network INTEGER);")
+	cat(query)
+	dbExecute(con, query)
+	
+	### Calculate ND between origin points ---------------------------------------
+	t1 <- proc.time()
+	
+	print(chunks)
+	parallel::mclapply(1:length(chunks), function(i) {
+		
+		# Lokale PostgreSQL-Verbindung in jedem Worker
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE)
+		
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+		
+		t1 <- proc.time()
+		print(chunks)
+		query <- paste0(
+			"INSERT INTO ", char_schema, ".origin_nd SELECT m1.flow_id as flow_id_i,\n                                         m2.flow_id as flow_id_j, ",
+			"LEAST(",
+			"CAST((m1.d_dist_to_start + m2.d_dist_to_start + COALESCE(pi_pk.m, 0))^2 AS INT), ",
+			"CAST((m1.d_dist_to_end + m2.d_dist_to_end + COALESCE(pj_pl.m, 0))^2 AS INT), ",
+			"CAST((m1.d_dist_to_start + m2.d_dist_to_end + COALESCE(pi_pl.m, 0))^2 AS INT), ",
+			"CAST((m1.d_dist_to_end + m2.d_dist_to_start + COALESCE(pj_pk.m, 0))^2 AS INT)",
+			") AS flow_manhattan_pts_network ",
+			"FROM ", char_schema, ".data  m1 ",
+			"CROSS JOIN ", char_schema, ".data m2 ",
+			"INNER JOIN ", char_network, " e_ij ON m1.origin_id = e_ij.id ",
+			"INNER JOIN ", char_network, " e_kl ON m2.origin_id = e_kl.id ",
+			"INNER JOIN ", char_dist_mat, " pi_pk ON pi_pk.source = LEAST(e_ij.source, e_kl.source) AND\n                          pi_pk.target = GREATEST(e_ij.source, e_kl.source) ",
+			"INNER JOIN ", char_dist_mat, " pj_pl ON pj_pl.source = LEAST(e_ij.target, e_kl.target) AND\n                          pj_pl.target = GREATEST(e_ij.target, e_kl.target) ",
+			"INNER JOIN ", char_dist_mat, " pi_pl ON pi_pl.source = LEAST(e_ij.source, e_kl.target) AND\n                          pi_pl.target = GREATEST(e_ij.source, e_kl.target) ",
+			"INNER JOIN ", char_dist_mat, " pj_pk ON pj_pk.source = LEAST(e_ij.target, e_kl.source) AND\n                          pj_pk.target = GREATEST(e_ij.target, e_kl.source) ",
+			"WHERE m1.flow_id >= ", id_start,
+			" AND m1.flow_id <= ", id_end,
+			" AND m1.flow_id < m2.flow_id AND m1.origin_id != m2.origin_id;")
+		dbExecute(local_con, query)
+		
+	}, mc.cores = cores)
+	
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating ND between origin points: ", diff_time, "\n")
+	
+	### Calculate ND between dest points ---------------------------------------
+	t1 <- proc.time()
+	print(chunks)
+	parallel::mclapply(1:length(chunks), function(i) {
+		
+		# Lokale PostgreSQL-Verbindung in jedem Worker
+		local_con <- dbConnect(Postgres(),
+													 dbname = dbname,
+													 host = host,
+													 user = user,
+													 password = pw,
+													 sslmode = "require")
+		on.exit(dbDisconnect(local_con), add = TRUE)
+		
+		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+		id_end <- chunks[i]
+		
+		query <- paste0(
+			"INSERT INTO ", char_schema, ".dest_nd SELECT m1.flow_id as flow_id_i,\n                                       m2.flow_id as flow_id_j, ",
+			"LEAST(",
+			"CAST((m1.d_dist_to_start + m2.d_dist_to_start + COALESCE(pi_pk.m, 0))^2 AS INT), ",
+			"CAST((m1.d_dist_to_end + m2.d_dist_to_end + COALESCE(pj_pl.m, 0))^2 AS INT), ",
+			"CAST((m1.d_dist_to_start + m2.d_dist_to_end + COALESCE(pi_pl.m, 0))^2 AS INT), ",
+			"CAST((m1.d_dist_to_end + m2.d_dist_to_start + COALESCE(pj_pk.m, 0))^2 AS INT)",
+			") AS flow_manhattan_pts_network ",
+			"FROM ", char_schema, ".data  m1 ",
+			"CROSS JOIN ", char_schema, ".data m2 ",
+			"INNER JOIN ", char_network, " e_ij ON m1.dest_id = e_ij.id ",
+			"INNER JOIN ", char_network, " e_kl ON m2.dest_id = e_kl.id ",
+			"INNER JOIN ", char_dist_mat, " pi_pk ON pi_pk.source = LEAST(e_ij.source, e_kl.source) AND\n                          pi_pk.target = GREATEST(e_ij.source, e_kl.source) ",
+			"INNER JOIN ", char_dist_mat, " pj_pl ON pj_pl.source = LEAST(e_ij.target, e_kl.target) AND\n                          pj_pl.target = GREATEST(e_ij.target, e_kl.target) ",
+			"INNER JOIN ", char_dist_mat, " pi_pl ON pi_pl.source = LEAST(e_ij.source, e_kl.target) AND\n                          pi_pl.target = GREATEST(e_ij.source, e_kl.target) ",
+			"INNER JOIN ", char_dist_mat, " pj_pk ON pj_pk.source = LEAST(e_ij.target, e_kl.source) AND\n                          pj_pk.target = GREATEST(e_ij.target, e_kl.source) ",
+			"WHERE m1.flow_id >= ", id_start,
+			" AND m1.flow_id <= ", id_end,
+			" AND m1.flow_id < m2.flow_id AND m1.dest_id != m2.dest_id;")
+		dbExecute(local_con, query)
+		
+	}, mc.cores = cores)
+	
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating ND between dest points: ", diff_time, "\n")
+	
+	### Calculate ND between origin points on the same road segment -------------- 
+	t1 <- proc.time()
+	query <- paste0(
+		"INSERT INTO ", char_schema, ".origin_nd\n     SELECT m1.flow_id as flow_id_i, m2.flow_id as flow_id_j, \n     (m1.o_dist_to_start - m2.o_dist_to_start)^2 as flow_manhattan_pts_network\n     FROM ", char_schema, ".data m1\n     CROSS JOIN ",  char_schema, ".data m2\n     INNER JOIN ", char_network, " e_ij ON m1.origin_id = e_ij.id\n     INNER JOIN ", char_network, " e_kl ON m2.origin_id  = e_kl.id\n     WHERE m1.origin_id = m2.origin_id AND m1.flow_id != m2.flow_id;"
+	)
+	dbExecute(con, query)
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating ND between origin points on same road segment: ", diff_time, "\n")
+	
+	### Calculate ND between dest points on the same road segment -------------- 
+	t1 <- proc.time()
+	query <- paste0(
+		"INSERT INTO ", char_schema, ".dest_nd\n     SELECT m1.flow_id as flow_id_i, m2.flow_id as flow_id_j, \n     (m1.d_dist_to_start - m2.d_dist_to_start)^2 as flow_manhattan_pts_network\n     FROM ", char_schema, ".data m1\n     CROSS JOIN ",  char_schema, ".data m2\n     INNER JOIN ", char_network, " e_ij ON m1.dest_id = e_ij.id\n     INNER JOIN ", char_network, " e_kl ON m2.dest_id  = e_kl.id\n     WHERE m1.dest_id = m2.dest_id AND m1.flow_id != m2.flow_id;"
+	)
+	dbExecute(con, query)
+	t2 <- proc.time()
+	diff_time <- t2-t1
+	diff_time <- diff_time[3] %>% as.numeric
+	cat("Time for calculating ND between dest points on same road segment: ", diff_time, "\n")
+	
+	query <- paste0("DROP INDEX IF EXISTS ", char_schema, ".origin_nd_flow_id_i_flow_id_j_idx;")
+	cat(query, "\n")
+	dbExecute(con, query)
+	
+	query <- paste0("CREATE INDEX ON ", char_schema, ".origin_nd (flow_id_i, flow_id_j);")
+	cat(query, "\n")
+	dbExecute(con, query)
+	
+	query <- paste0("DROP INDEX IF EXISTS ", char_schema, ".dest_nd_flow_id_i_flow_id_j_idx;")
+	cat(query, "\n")
+	dbExecute(con, query)
+	
+	query <- paste0("CREATE INDEX ON ", char_schema, ".dest_nd (flow_id_i, flow_id_j);")
+	cat(query, "\n")
+	dbExecute(con, query)
+	
 	dbExecute(con, query)
 }
 

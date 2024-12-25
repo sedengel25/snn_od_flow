@@ -46,10 +46,10 @@ sf_trips$hour <- lubridate::hour(sf_trips$start_datetime)
 sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 100
+dist_filter <- 1000
 #int_kw <- c(9:11)
 int_wday <- c(1:4)
-int_hours <- c(6:8)
+int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
 	#filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
@@ -91,7 +91,7 @@ t_start <- proc.time()
 char_schema <- paste0(char_data, 
 											"_min", 
 											dist_filter,
-											"_hours",
+											"m_hours",
 											paste0(int_hours, collapse = "_"),
 											"_wdays",
 											paste0(int_wday, collapse = "_"),
@@ -107,15 +107,11 @@ dbExecute(con, query)
 st_write(sf_trips_sub, con, Id(schema=char_schema, 
 												 table = "data"))
 
-main_calc_flow_euclid_dist_mat(char_schema = char_schema,
-															 char_trips = "data",
-															 n = nrow(sf_trips_sub))
-
 ################################################################################
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
 gc()
-dt_pts_nd <- main_calc_flow_nd_dist_mat(sf_trips_sub, dt_network, dt_dist_mat)
+dt_pts_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
 rm(dt_dist_mat)
 gc()
 dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
@@ -267,20 +263,7 @@ ggplot(data = sf_snn[sf_snn$cluster_pred!=0,]) +
 # 											char_buffer,
 # 											"m")
 
-char_schema <- paste0(char_data, 
-											"_min", 
-											dist_filter,
-											"_hours",
-											paste0(int_hours, collapse = "_"),
-											"_wdays",
-											paste0(int_wday, collapse = "_"),
-											"m_buffer",
-											char_buffer,
-											"m")
 
-query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
-cat(query)
-dbExecute(con, query)
 char_table <- paste0("snn1_k",
 										 int_k,
 										 "_eps",
