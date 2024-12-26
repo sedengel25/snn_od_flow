@@ -10,7 +10,7 @@ np <- reticulate::import("numpy")
 hdbscan <- import("hdbscan")
 
 chars_datasets <- list.dirs(path_python, recursive = FALSE)
-char_base <- chars_datasets[3]
+char_base <- chars_datasets[6]
 char_data <- strsplit(char_base, "/")[[1]][6]
 char_dist_measures <- c("flow_manhattan_pts_euclid",
 												"flow_chebyshev_pts_euclid",

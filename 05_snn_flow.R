@@ -19,8 +19,8 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
-char_buffer <- "2000"
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[20]
+char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
 	char_dt_dist_mat))
@@ -47,11 +47,11 @@ sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 dist_filter <- 1000
-#int_kw <- c(9:11)
+int_kw <- c(9:11)
 int_wday <- c(1:4)
 int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
-	#filter(week %in% int_kw) %>%
+	filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
 	filter(hour %in% int_hours) %>%
 	filter(weekday %in% int_wday)
@@ -111,54 +111,46 @@ st_write(sf_trips_sub, con, Id(schema=char_schema,
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
 gc()
-dt_pts_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
-rm(dt_dist_mat)
-gc()
-dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
-dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
-char_buffer
-
-
-
-rm(dt_pts_nd)
-gc()
-
-dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
-rm(dt_o_pts_nd)
-rm(dt_d_pts_nd)
-gc()
-dt_flow_nd[, distance := distance.x + distance.y]
-dt_flow_nd <- dt_flow_nd[, .(flow_m = from, flow_n = to, distance)]
-
-
-dt_sym <- rbind(
-	dt_flow_nd,
-	dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
-)
-rm(dt_flow_nd)
-gc()
-
-dt_flow_nd <- dt_sym
-rm(dt_sym)
-gc()
-
-dt_flow_nd <- dt_flow_nd %>%
-	rename(from = flow_m,
-				 to = flow_n)
-
-
-
-# dbWriteTable(con, substr(char_dt_dist_mat, 
-# 												 start = 1, 
-# 												 stop = nchar(char_dt_dist_mat) - 4),
-# 						 dt_flow_nd)
-
-num_ids <- nrow(sf_trips_sub)
-matrix_flow_nd <- matrix(99999, nrow = num_ids, ncol = num_ids)
-matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
-matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
-gc()
-
+matrix_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
+matrix_flow_nd[1:5, 1:5]
+# rm(dt_dist_mat)
+# gc()
+# dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
+# dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
+# 
+# rm(dt_pts_nd)
+# gc()
+# 
+# dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
+# rm(dt_o_pts_nd)
+# rm(dt_d_pts_nd)
+# gc()
+# dt_flow_nd[, distance := distance.x + distance.y]
+# dt_flow_nd <- dt_flow_nd[, .(flow_m = from, flow_n = to, distance)]
+# 
+# 
+# dt_sym <- rbind(
+# 	dt_flow_nd,
+# 	dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
+# )
+# rm(dt_flow_nd)
+# gc()
+# 
+# dt_flow_nd <- dt_sym
+# rm(dt_sym)
+# gc()
+# 
+# dt_flow_nd <- dt_flow_nd %>%
+# 	rename(from = flow_m,
+# 				 to = flow_n)
+# 
+# 
+# num_ids <- nrow(sf_trips_sub)
+# matrix_flow_nd <- matrix(99999, nrow = num_ids, ncol = num_ids)
+# matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
+# matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
+# gc()
+# 
 
 ################################################################################
 # Test MDS

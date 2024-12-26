@@ -110,21 +110,63 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 
 	### 2. Calc ND between OD flows ----------------------------------------------
 	# ND between origin points
-
+	gc()
 	dt_o_pts_nd <- parallel_process_networks(dt_origin, 
 																					dt_network,
 																					dt_dist_mat,
 																					int_cores)
-	
+	gc()
 	# ND between dest points
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,
 																					 dt_dist_mat,
 																					 int_cores)
+	gc()
 	
+	rm(dt_dist_mat)
+	gc()
+	dt_o_pts_nd <- dt_o_pts_nd %>% as.data.table()
+	dt_d_pts_nd <- dt_d_pts_nd %>% as.data.table()
+	gc()
 	
-	return(list("dt_o_pts_nd" = dt_o_pts_nd,
-							 "dt_d_pts_nd" = dt_d_pts_nd))
+	dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
+	rm(dt_o_pts_nd)
+	rm(dt_d_pts_nd)
+	gc()
+	dt_flow_nd[, distance := distance.x + distance.y]
+	dt_flow_nd <- dt_flow_nd[, .(flow_m = from, flow_n = to, distance)]
+	gc()
+	
+	dt_sym <- rbind(
+		dt_flow_nd,
+		dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
+	)
+	rm(dt_flow_nd)
+	gc()
+	
+	dt_flow_nd <- dt_sym
+	rm(dt_sym)
+	gc()
+	
+	dt_flow_nd <- dt_flow_nd %>%
+		rename(from = flow_m,
+					 to = flow_n)
+	
+	print(head(dt_flow_nd))
+	num_ids <- nrow(sf_trips)
+	max_index <- max(c(dt_flow_nd$from, dt_flow_nd$to))
+	if (max_index > num_ids) {
+		cat("Problem: Indizes überschreiten die Matrix-Dimension. Maximaler Index:", max_index, 
+				"Matrixgröße:", num_ids, "\n")
+	}
+	
+	matrix_flow_nd <- matrix(0, nrow = num_ids, ncol = num_ids)
+	matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
+	matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
+	
+	gc()
+	
+	return(matrix_flow_nd)
 }
 
 # Documentation: main_euclid_dist_mat_cpu

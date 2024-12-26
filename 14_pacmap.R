@@ -107,7 +107,6 @@ char_dist_measures <- c("flow_manhattan_pts_euclid",
 												"flow_chebyshev_pts_euclid",
 												"flow_euclid",
 												"flow_manhattan_pts_network")
-#sudo chown -R postgres /home/sebastiandengel/snn_flow/python --> run in terminal
 
 for(dist_measure in char_dist_measures){
 	folder <- here::here(path_pacmap, dist_measure)
