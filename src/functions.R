@@ -838,7 +838,8 @@ create_pacmap_plotly_with_clusters <- function(df_pacmap) {
 # Action: ...
 create_pacmap_ggplot_with_clusters <- function(df_cluster, 
 																							 char_dist_measure,
-																							 minpts) {
+																							 method,
+																							 param) {
 	
 	num_clusters <- length(unique(df_cluster$cluster))
 	num_cl_per_palette <- round(num_clusters/3)
@@ -853,7 +854,7 @@ create_pacmap_ggplot_with_clusters <- function(df_cluster,
 		geom_point(size = 1, alpha = 0.3) +
 		scale_color_manual(values = random_colors) +  # Verwende scale_color_manual
 		labs(
-			title = paste0("PaCMAP | HDBSCAN | ", minpts, " | ", char_dist_measure),
+			title = paste0("PaCMAP | ", method, " | ", param, " | ", char_dist_measure),
 			x = "x",
 			y = "y"
 		) +

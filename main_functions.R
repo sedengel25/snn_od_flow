@@ -152,6 +152,8 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 		rename(from = flow_m,
 					 to = flow_n)
 	
+	#return(dt_flow_nd)
+	
 	print(head(dt_flow_nd))
 	num_ids <- nrow(sf_trips)
 	max_index <- max(c(dt_flow_nd$from, dt_flow_nd$to))

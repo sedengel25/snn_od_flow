@@ -14,7 +14,7 @@ char_dist_measures <- c("flow_manhattan_pts_euclid",
 												"flow_manhattan_pts_network")
 for(char_data in filtered_dirs){
 	char_dist_measures <- list.files(char_data) 
-	for(dist_measure in char_dist_measures){
+	for(dist_measure in char_dist_measures[4]){
 		
 		folder <- here::here(char_data, dist_measure)
 		print(folder)
@@ -25,6 +25,13 @@ for(char_data in filtered_dirs){
 																		"--directory ", folder,
 																		"--distance ", dist_measure,
 																		"--n 5001 ",
+																		"--i ", i),
+								stdout = "", stderr = "")
+			} else {
+				system2("python3", args = c(here::here(path_python,
+																							 "pacmap_ram.py"),
+																		"--directory ", folder,
+																		"--distance ", dist_measure,
 																		"--i ", i),
 								stdout = "", stderr = "")
 			}

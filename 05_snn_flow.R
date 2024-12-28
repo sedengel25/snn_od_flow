@@ -19,8 +19,8 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[20]
-char_buffer <- "50000"
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
+char_buffer <- "2000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
 	char_dt_dist_mat))
@@ -49,31 +49,17 @@ sf_trips <- sf_trips %>%
 dist_filter <- 1000
 int_kw <- c(9:11)
 int_wday <- c(1:4)
-int_hours <- c(16:18)
+#int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
 	filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
-	filter(hour %in% int_hours) %>%
+	#filter(hour %in% int_hours) 
+#%>%
 	filter(weekday %in% int_wday)
 nrow(sf_trips_sub)
 rm(sf_trips)
 gc()
 
-# if(char_prefix_data == "sr"){
-# 	sf_trips <- sf_trips %>%
-# 		filter(trip_distance > 2000)
-# } else if(char_prefix_data == "nb"){
-
-# } else if(char_prefix_data == "comb"){
-# 	sf_trips_sr <- sf_trips %>%
-# 		filter(source == "sr" & trip_distance > 2000) 
-# 	
-# 	sf_trips_nb <- sf_trips %>%
-# 		filter(source =="nb" & trip_distance > 2000 & week %in% int_kw) %>%
-# 		slice_head(n = nrow(sf_trips_sr))
-# 	
-# 	sf_trips <- rbind(sf_trips_sr, sf_trips_nb)
-# }
 
 
 
@@ -91,8 +77,9 @@ t_start <- proc.time()
 char_schema <- paste0(char_data, 
 											"_min", 
 											dist_filter,
-											"m_hours",
-											paste0(int_hours, collapse = "_"),
+											"m_",
+											# "hours",
+											# paste0(int_hours, collapse = "_"),
 											"_wdays",
 											paste0(int_wday, collapse = "_"),
 											"m_buffer",
@@ -111,106 +98,16 @@ st_write(sf_trips_sub, con, Id(schema=char_schema,
 # 3. Calculate network distances between OD flows and put it into a matrix
 ################################################################################
 gc()
-matrix_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
-matrix_flow_nd[1:5, 1:5]
-# rm(dt_dist_mat)
-# gc()
-# dt_o_pts_nd <- dt_pts_nd$dt_o_pts_nd %>% as.data.table()
-# dt_d_pts_nd <- dt_pts_nd$dt_d_pts_nd %>% as.data.table()
-# 
-# rm(dt_pts_nd)
-# gc()
-# 
-# dt_flow_nd <- merge(dt_o_pts_nd, dt_d_pts_nd, by = c("from", "to"))
-# rm(dt_o_pts_nd)
-# rm(dt_d_pts_nd)
-# gc()
-# dt_flow_nd[, distance := distance.x + distance.y]
-# dt_flow_nd <- dt_flow_nd[, .(flow_m = from, flow_n = to, distance)]
-# 
-# 
-# dt_sym <- rbind(
-# 	dt_flow_nd,
-# 	dt_flow_nd[, .(flow_m = flow_n, flow_n = flow_m, distance = distance)]
-# )
-# rm(dt_flow_nd)
-# gc()
-# 
-# dt_flow_nd <- dt_sym
-# rm(dt_sym)
-# gc()
-# 
-# dt_flow_nd <- dt_flow_nd %>%
-# 	rename(from = flow_m,
-# 				 to = flow_n)
-# 
-# 
-# num_ids <- nrow(sf_trips_sub)
-# matrix_flow_nd <- matrix(99999, nrow = num_ids, ncol = num_ids)
-# matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
-# matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
-# gc()
-# 
-
-################################################################################
-# Test MDS
-################################################################################
-# n <- nrow(sf_trips_sub)
-# matrix_flow_nd <- matrix(0, nrow = n, ncol = n)
-# 
-# 
-# matrix_flow_nd[dt_flow_nd$from + (dt_flow_nd$to - 1) * n] <- dt_flow_nd$distance
-# matrix_flow_nd[dt_flow_nd$to + (dt_flow_nd$from - 1) * n] <- dt_flow_nd$distance
-
-
-# res <- cmdscale(matrix_flow_nd)
-# 
-# df_res <- data.frame(
-# 	x = res[, 1],
-# 	y = res[, 2]
-# )
-
-
-
-
-# l <- nrow(sf_trips_sub)       # Klassische MDS-Größe
-# r <- 2         # Extrahiere 2 Dimensionen
-# s_points <- 1 # Anzahl der Punkte zum Kombinieren (5*r)
-# n_cores <- 14   # Anzahl der verwendeten Kerne (abhängig von deinem Rechner)
-# 
-# # Fast MDS ausführen
-# res_fast <- fast_mds(matrix_flow_nd, l, s_points, r, n_cores)
-# df_res_fast <- data.frame(
-# 	x = res_fast$points[, 1],
-# 	y = res_fast$points[, 2]
-# )
-# # Plot mit ggplot2
-# ggplot(df_res_fast, aes(x = x, y = y)) +
-# 	geom_point(color = "blue", size = 1.5) + # Punkte hinzufügen
-# 	theme_minimal() + # Minimalistisches Design
-# 	labs(
-# 		title = "MDS Plot",
-# 		x = "x",
-# 		y = "y"
-# 	)
-# 
-# 
-# ggplot(df_res, aes(x = x, y = y)) +
-# 	geom_point(color = "blue", size = 1.5) + # Punkte hinzufügen
-# 	theme_minimal() + # Minimalistisches Design
-# 	labs(
-# 		title = "MDS Plot",
-# 		x = "x",
-# 		y = "y"
-# 	)
+dt_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
+gc()
 
 
 ################################################################################
 # Algorithm
 ################################################################################
-int_k <- 20
-int_eps <- 10
-int_minpts <- 12
+int_k <- 40
+int_eps <- 20
+int_minpts <- 22
 
 dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 k = int_k,
@@ -218,7 +115,6 @@ dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 minpts = int_minpts,
 													 dt_flow_distance = dt_flow_nd)
 
-rm(dt_flow_nd)
 gc()
 t_end<- proc.time()
 print(t_end - t_start)
@@ -267,6 +163,110 @@ char_table <- paste0("snn1_k",
 st_write(sf_snn, con, Id(schema=char_schema, 
 																					table = char_table))
 
+################################################################################
+# 5. PaCMAP
+################################################################################
+dist_measure <- "manhattan_network"
+pacmap_folder <- here::here(path_python, char_schema, dist_measure)
+if (!dir.exists(pacmap_folder)) {
+	dir.create(pacmap_folder, recursive = TRUE, mode = "0777") 
+	message("Directory created with full permissions: ", pacmap_folder)
+} else {
+	message("Directory already exists: ", pacmap_folder)
+}
+
+
+# char_dt_dist_mat <-  char_av_dt_dist_mat_files[20]
+# char_buffer <- "50000"
+# dt_dist_mat <- read_rds(here::here(
+# 	char_path_dt_dist_mat,
+# 	char_dt_dist_mat))
+# 
+# 
+# # m-Spalte runden und in Integer umwandeln
+# dt_dist_mat <- dt_dist_mat %>%
+# 	mutate(m = round(m, 0) %>% as.integer())
+# 
+# gc()
+# dt_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
+# gc()
+# gc()
+# num_ids <- nrow(sf_trips_sub)
+# matrix_flow_nd <- matrix(0, nrow = num_ids, ncol = num_ids)
+# matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
+# matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
+# gc()
+
+
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+hdbscan <- import("hdbscan")
+rm(dt_flow_nd)
+gc()
+rm(dt_dist_mat)
+gc()
+# np_matrix_flow_nd <- np$array(matrix_flow_nd)
+# np_array <- r_to_py(matrix_flow_nd)
+# np_array <- np$array(np_array, dtype = "int32") 
+# np$save(here::here(path_python, char_schema, "dist_mat.npy"), np_array)
+# rm(matrix_flow_nd)
+# gc()
+# 
+# system2("python3", args = c(here::here(path_python,
+# 																			 "pacmap_ram.py"),
+# 														"--directory ", pacmap_folder,
+# 														"--distance ", dist_measure),
+# 				stdout = "", stderr = "")
+
+df_embedding <- load_pacmap_embedding(here::here(
+	path_python, char_schema), dist_measure, np)
+
+# p1 <- pacmap_density_plot(df_embedding)
+# ggsave(here::here(path_python, char_schema, dist_measure, "pacmap.pdf"), plot = p1)
+
+df_embedding$cluster <- sf_snn$cluster_pred
+
+
+create_pacmap_ggplot_with_clusters(df_cluster = df_embedding,
+																	 char_dist_measure = dist_measure,
+																	 method = "SNN_flow org data",
+																	 param = int_k)
+
+
+pacmap_dist_mat <- dist(df_embedding[,1:2], upper = TRUE)
+gc()
+pacmap_dist_mat <- as.matrix(pacmap_dist_mat)
+gc()
+pacmap_dist_mat <- reshape2::melt(pacmap_dist_mat, 
+													varnames = c("from", "to"), 
+													value.name = "distance") 
+gc()
+pacmap_dist_mat <- pacmap_dist_mat %>%
+	as.data.table()
+gc()
+dt_snn_pred_pacmap <- snn_flow(ids = sf_trips_sub$flow_id,
+													 k = int_k,
+													 eps = int_eps,
+													 minpts = int_minpts,
+													 dt_flow_distance = pacmap_dist_mat)
+
+df_embedding$cluster <- dt_snn_pred_pacmap$cluster_pred
+create_pacmap_ggplot_with_clusters(df_cluster = df_embedding,
+																	 char_dist_measure = dist_measure,
+																	 method = "SNN_flow on pacmap data",
+																	 param = int_k)
+
+df_embedding$cluster <- dt_snn_pred_nd$cluster_pred
+
+snn_pacmap <- sNNclust(df_embedding[,1:2], 
+				 k = int_k,
+				 eps = int_eps,
+				 minPts = int_minpts)
+df_embedding$cluster <- snn_pacmap$cluster
+create_pacmap_ggplot_with_clusters(df_cluster = df_embedding,
+																	 char_dist_measure = dist_measure,
+																	 method = "sNNClust on pacmap data",
+																	 param = int_k)
 ################################################################################
 # 5. kmeans
 ################################################################################

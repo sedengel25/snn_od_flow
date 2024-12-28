@@ -52,7 +52,10 @@ reticulate::use_virtualenv("r-reticulate", required = TRUE)
 np <- reticulate::import("numpy")
 hdbscan <- import("hdbscan")
 
+
+
 for(i in 1:length(int_seq)){
+	i <- 12
 	j <- int_seq[i]
 	k <- int_seq[i+1]
 	if(is.na(k)){
@@ -102,7 +105,7 @@ for(i in 1:length(int_seq)){
 													"flow_euclid",
 													"flow_manhattan_pts_network")
 	### PaCMAP ----------------------------------------
-	for(dist_measure in char_dist_measures){
+	for(dist_measure in char_dist_measures[4]){
 		folder <- here::here(path_pacmap, dist_measure)
 		if (!dir.exists(folder)) {
 			dir.create(folder, recursive = TRUE, mode = "0777") 
@@ -136,9 +139,10 @@ for(i in 1:length(int_seq)){
 		# 				stdout = "", stderr = "")
 		
 	}
+	break
 }
-
-
+np_mat[1:5, 1:5]
+np_mat <-   np$array(matrix_flow_nd, dtype = "int32")
 ################################################################################
 # Run PaCMAP for each subset and distance matrix 5x for robustness
 ################################################################################
