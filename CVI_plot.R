@@ -49,18 +49,6 @@ df_long <- df_grouped %>%
 	
 
 
-ggplot(df_long, aes(x = Min_Cluster_Size, y = value, 
-																	color = Distance_Measure)) +
-	geom_line() +  
-	labs(
-		x = "Min Cluster Size",
-		y = "CVI",
-		color = "Distance measure"
-	) +
-	theme_minimal() + 
-	facet_wrap(~ Clustering_Type + cvi, scales = "free_y") +  
-	theme(
-		text = element_text(size = 12))
 
 
 
@@ -85,4 +73,30 @@ ggplot(df_long, aes(x = Min_Cluster_Size, y = value, color = Distance_Measure)) 
 
 
 
-write_rds(df_res, file = "hdbscan_cvnn_k20.rds")
+#write_rds(df_res, file = "hdbscan_cvnn_k20.rds")
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+df_pacmap <- np$load(here::here(path_python, 
+													"data_10001_15001",
+													"flow_manhattan_pts_network",
+													"embedding_3d_5.npy")) %>%
+	as.data.frame()%>%
+	rename("x" = "V1", "y" = "V2", "z" = "V3")
+
+plot_ly(
+	data = df_pacmap, 
+	x = ~x, y = ~y, z = ~z, 
+	type = "scatter3d", 
+	mode = "markers", 
+	marker = list(
+		size = 4, 
+		opacity = 0.25 # Transparenz der Punkte
+	)
+) %>%
+	layout(
+		scene = list(
+			xaxis = list(title = "x"),
+			yaxis = list(title = "y"),
+			zaxis = list(title = "z")
+		)
+	)
