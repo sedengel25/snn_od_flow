@@ -53,6 +53,7 @@ library(viridis)
 library(jsonlite)
 library(xtable)
 library(dplyr)
+library(ggh4x)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################

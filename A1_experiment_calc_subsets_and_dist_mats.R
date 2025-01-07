@@ -55,7 +55,6 @@ hdbscan <- import("hdbscan")
 
 
 for(i in 1:length(int_seq)){
-	i <- 12
 	j <- int_seq[i]
 	k <- int_seq[i+1]
 	if(is.na(k)){
@@ -105,32 +104,32 @@ for(i in 1:length(int_seq)){
 													"flow_euclid",
 													"flow_manhattan_pts_network")
 	### PaCMAP ----------------------------------------
-	for(dist_measure in char_dist_measures[4]){
-		folder <- here::here(path_pacmap, dist_measure)
-		if (!dir.exists(folder)) {
-			dir.create(folder, recursive = TRUE, mode = "0777") 
-			message("Directory created with full permissions: ", folder)
-		} else {
-			message("Directory already exists: ", folder)
-		}
-		
-		
-		if(dist_measure != "flow_manhattan_pts_network"){
-			system2("/usr/bin/sudo", c("chown", "-R", "postgres", folder))
-			main_psql_dist_mat_to_matrix(char_schema = char_schema,
-																	 dist_measure = dist_measure,
-																	 n = nrow(sf_trips_sub),
-																	 cores = int_cores)
-			Sys.sleep(3)
-			system2("python3", args = c(here::here(path_python,
-																						 "read_json_to_npy.py"),
-																	"--directory", folder,
-																	"--distance", dist_measure),
-							stdout = "", stderr = "")
-		} else {
-			npy_file <- here::here(path_pacmap, dist_measure, "dist_mat.npy")
-			np$save(npy_file, np$array(matrix_flow_nd, dtype = "int32"))
-		}
+	# for(dist_measure in char_dist_measures[4]){
+	# 	folder <- here::here(path_pacmap, dist_measure)
+	# 	if (!dir.exists(folder)) {
+	# 		dir.create(folder, recursive = TRUE, mode = "0777") 
+	# 		message("Directory created with full permissions: ", folder)
+	# 	} else {
+	# 		message("Directory already exists: ", folder)
+	# 	}
+	# 	
+	# 	
+	# 	if(dist_measure != "flow_manhattan_pts_network"){
+	# 		system2("/usr/bin/sudo", c("chown", "-R", "postgres", folder))
+	# 		main_psql_dist_mat_to_matrix(char_schema = char_schema,
+	# 																 dist_measure = dist_measure,
+	# 																 n = nrow(sf_trips_sub),
+	# 																 cores = int_cores)
+	# 		Sys.sleep(3)
+	# 		system2("python3", args = c(here::here(path_python,
+	# 																					 "read_json_to_npy.py"),
+	# 																"--directory", folder,
+	# 																"--distance", dist_measure),
+	# 						stdout = "", stderr = "")
+	# 	} else {
+	# 		npy_file <- here::here(path_pacmap, dist_measure, "dist_mat.npy")
+	# 		np$save(npy_file, np$array(matrix_flow_nd, dtype = "int32"))
+	# 	}
 
 		# system2("python3", args = c(here::here(path_python,
 		# 																			 "pacmap_cpu.py"),
@@ -141,8 +140,4 @@ for(i in 1:length(int_seq)){
 	}
 	break
 }
-np_mat[1:5, 1:5]
-np_mat <-   np$array(matrix_flow_nd, dtype = "int32")
-################################################################################
-# Run PaCMAP for each subset and distance matrix 5x for robustness
-################################################################################
+
