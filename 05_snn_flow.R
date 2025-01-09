@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[2, "table_name"]
+char_network <- available_networks[3, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
@@ -19,8 +19,8 @@ char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[17]
-char_buffer <- "2000"
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[16]
+char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
 	char_dt_dist_mat))
@@ -46,20 +46,20 @@ sf_trips$hour <- lubridate::hour(sf_trips$start_datetime)
 sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 1000
-int_kw <- c(9:11)
+dist_filter <- 250
+int_kw <- c(9)
 int_wday <- c(1:4)
 #int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
 	filter(week %in% int_kw) %>%
 	filter(trip_distance >= dist_filter) %>%
 	#filter(hour %in% int_hours) 
-#%>%
+	#%>%
 	filter(weekday %in% int_wday)
-nrow(sf_trips_sub)
+n_samples <- nrow(sf_trips_sub)
+print(n_samples)
 rm(sf_trips)
 gc()
-
 
 
 
@@ -77,15 +77,16 @@ t_start <- proc.time()
 char_schema <- paste0(char_data, 
 											"_min", 
 											dist_filter,
-											"m_",
-											# "hours",
+											"m",
+											"_kw",
+											paste0(int_kw, collapse = "_"),
+											# "_hours",
 											# paste0(int_hours, collapse = "_"),
 											"_wdays",
 											paste0(int_wday, collapse = "_"),
 											"m_buffer",
 											char_buffer,
 											"m")
-
 query <- paste0("CREATE SCHEMA IF NOT EXISTS ", char_schema)
 cat(query)
 dbExecute(con, query)
@@ -105,9 +106,10 @@ gc()
 ################################################################################
 # Algorithm
 ################################################################################
-int_k <- 40
-int_eps <- 20
-int_minpts <- 22
+int_k <- 25
+int_minpts <- 12
+int_eps <- 15
+
 
 dt_snn_pred_nd <- snn_flow(ids = sf_trips_sub$flow_id,
 													 k = int_k,
@@ -166,7 +168,7 @@ st_write(sf_snn, con, Id(schema=char_schema,
 ################################################################################
 # 5. PaCMAP
 ################################################################################
-dist_measure <- "manhattan_network"
+dist_measure <- "flow_manhattan_pts_network"
 pacmap_folder <- here::here(path_python, char_schema, dist_measure)
 if (!dir.exists(pacmap_folder)) {
 	dir.create(pacmap_folder, recursive = TRUE, mode = "0777") 

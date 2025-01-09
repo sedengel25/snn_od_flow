@@ -940,15 +940,17 @@ py_hdbscan_dbcv <- function(np,
 
 py_hdbscan <- function(np, 
 											 hdbscan,
-											 df_embedding, 
+											 matrix_pacmap, 
 											minpts) {
-	x <- np$array(df_embedding[, c(1:2)] %>% as.matrix())
+	x <- np$array(matrix_pacmap)
 	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
 	hdbscan_res <- hdbscan_model$fit(x)
+	print(hdbscan_res$labels_ %>% table)
 	np_labels <- np$array(hdbscan_res$labels_, dtype = "int32")
-  df_cluster <- df_embedding
+  df_cluster <- matrix_pacmap %>%
+  	as.data.frame() %>%
+  	rename("x" = "V1", "y" = "V2", "z" = "V3")
   df_cluster$cluster <- hdbscan_res$labels_
-	df_cluster$cluster <- df_cluster$cluster + 1
 	df_cluster$flow_id <- 1:nrow(df_cluster)
 	return(df_cluster)
 }
@@ -1168,12 +1170,14 @@ calc_nd2_between_od_points <- function(char_schema,
 	dbExecute(con, query)
 	
 	query <- paste0("CREATE TABLE ", paste0(char_schema, ".origin_nd"),
-									" (flow_id_i INTEGER,\n                    flow_id_j INTEGER,\n                    flow_manhattan_pts_network INTEGER);")
+									" (flow_id_i INTEGER,\n                    flow_id_j INTEGER,\n                    
+									flow_manhattan_pts_network INTEGER);")
 	cat(query)
 	dbExecute(con, query)
 	
 	query <- paste0("CREATE TABLE ", paste0(char_schema, ".dest_nd"),
-									" (flow_id_i INTEGER,\n                    flow_id_j INTEGER,\n                    flow_manhattan_pts_network INTEGER);")
+									" (flow_id_i INTEGER,\n                    flow_id_j INTEGER,\n                    
+									flow_manhattan_pts_network INTEGER);")
 	cat(query)
 	dbExecute(con, query)
 	
@@ -1329,37 +1333,68 @@ insert_flow_nd_in_distance_table <- function(char_schema, chunks, cores) {
 	cat(query, "\n")
 	dbExecute(con, query)
 	t1 <- proc.time()
-	parallel::mclapply(1:length(chunks), function(i) {
-		
-		local_con <- dbConnect(Postgres(),
-													 dbname = dbname,
-													 host = host,
-													 user = user,
-													 password = pw,
-													 sslmode = "require")
-		on.exit(dbDisconnect(local_con), add = TRUE) 
-		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
-		id_end <- chunks[i]
-		
-		
-		query <- paste0(
-			"INSERT INTO ", char_schema, ".new_flow_distances ",
-			"SELECT ",
-			"    f.*, ",
-			"    COALESCE(f.flow_manhattan_pts_network, 0) + ",
-			"    COALESCE(o.flow_manhattan_pts_network, 0) + ",
-			"    COALESCE(d.flow_manhattan_pts_network, 0) AS updated_flow_manhattan_pts_network ",
-			"FROM ", char_schema, ".flow_distances f ",
-			"LEFT JOIN ", char_schema, ".origin_nd o ",
-			"    ON f.flow_id_i = o.flow_id_i AND f.flow_id_j = o.flow_id_j ",
-			"LEFT JOIN ", char_schema, ".dest_nd d ",
-			"    ON f.flow_id_i = d.flow_id_i AND f.flow_id_j = d.flow_id_j ",
-			"WHERE f.flow_id_i BETWEEN ", id_start, " AND ", id_end, ";"
-		)
-		cat(query)
-		dbExecute(local_con, query)
-		
+	results <- parallel::mclapply(1:length(chunks), function(i) {
+		tryCatch({
+			# Verbindung zur Datenbank herstellen
+			local_con <- dbConnect(Postgres(),
+														 dbname = dbname,
+														 host = host,
+														 user = user,
+														 password = pw,
+														 sslmode = "require")
+			on.exit(dbDisconnect(local_con), add = TRUE)  # Verbindung nach Ausführung trennen
+			
+			# IDs für den aktuellen Chunk bestimmen
+			id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
+			id_end <- chunks[i]
+			
+			# SQL-Query erstellen
+			query <- paste0(
+				"INSERT INTO ", char_schema, ".new_flow_distances ",
+				"SELECT ",
+				"    f.*, ",
+				"    COALESCE(f.flow_manhattan_pts_network, 0) + ",
+				"    COALESCE(o.flow_manhattan_pts_network, 0) + ",
+				"    COALESCE(d.flow_manhattan_pts_network, 0) AS updated_flow_manhattan_pts_network ",
+				"FROM ", char_schema, ".flow_distances f ",
+				"LEFT JOIN ", char_schema, ".origin_nd o ",
+				"    ON f.flow_id_i = o.flow_id_i AND f.flow_id_j = o.flow_id_j ",
+				"LEFT JOIN ", char_schema, ".dest_nd d ",
+				"    ON f.flow_id_i = d.flow_id_i AND f.flow_id_j = d.flow_id_j ",
+				"WHERE f.flow_id_i BETWEEN ", id_start, " AND ", id_end, ";"
+			)
+			
+			cat("Executing query for chunk ", i, ":\n", query, "\n")
+			
+			# SQL-Query ausführen
+			dbExecute(local_con, query)
+			
+			# Erfolgreiches Ergebnis zurückgeben
+			return(list(success = TRUE, chunk = i, message = "Success"))
+			
+		}, error = function(e) {
+			# Fehler abfangen und zurückgeben
+			return(list(success = FALSE, chunk = i, error_message = e$message))
+		})
 	}, mc.cores = cores)
+	
+	# Fehler nachträglich analysieren
+	errors <- lapply(results, function(res) {
+		if (!res$success) {
+			return(paste0("Chunk ", res$chunk, " failed: ", res$error_message))
+		}
+		NULL
+	})
+	errors <- Filter(Negate(is.null), errors)  # Nur Fehler behalten
+	
+	# Fehler ausgeben
+	if (length(errors) > 0) {
+		cat("Fehler während der Ausführung:\n")
+		print(errors)
+	} else {
+		cat("Keine Fehler aufgetreten.\n")
+	}
+	
 	
 	
 	
@@ -1396,3 +1431,78 @@ insert_flow_nd_in_distance_table <- function(char_schema, chunks, cores) {
 
 
 
+show_moved_vs_border_plot <- function(result, int_row, df_cluster_euclid, sf_trips_sub, sf_network, k) {
+	moved_flows <- result[int_row,"flows"] %>% pull %>% unlist()
+	df_moved_flows <- df_cluster_euclid %>% filter(flow_id %in% moved_flows)
+	#df_moved_flows <- df_cluster_euclid %>% filter(flow_id ==1353)
+	df_remaining_flows <- df_cluster_euclid %>% filter(!flow_id %in% moved_flows)
+	knn_result <- nn2(
+		data = df_remaining_flows[, c("x", "y", "z")],  # Features für kNN
+		query = df_moved_flows[, c("x", "y", "z")],  # Punkte von moved_flows
+		k = k
+	)
+	
+	
+	border_indices <- knn_result$nn.idx %>% as.vector() %>% unique()
+	border_flows <-  df_remaining_flows[border_indices, "flow_id"]
+	df_cluster_euclid$border <- ifelse(df_cluster_euclid$flow_id %in% border_flows, 1, 0)
+	df_cluster_euclid$moved <- ifelse(df_cluster_euclid$flow_id %in% moved_flows, 1, 0)
+	df_cluster_euclid <- df_cluster_euclid %>%
+		mutate(
+			category = case_when(
+				moved == 1 ~ "Moved",
+				border == 1 ~ "Border",
+				TRUE ~ "Neither"
+			)
+		)
+	ply <- plot_ly(
+		data = df_cluster_euclid, 
+		x = ~x, 
+		y = ~y, 
+		z = ~z, 
+		color = ~factor(category), # Kategorie einfärben
+		type = "scatter3d", 
+		mode = "markers", 
+		marker = list(
+			size = 4, 
+			opacity = 0.5 # Transparenz der Punkte
+		),
+		text = ~as.character(paste0("Flow -", flow_id, ", Category: ", category)), # Text für Hover-Effekt
+		hoverinfo = "text" # Nur den Text anzeigen
+	) %>%
+		layout(
+			scene = list(
+				xaxis = list(title = "x"),
+				yaxis = list(title = "y"),
+				zaxis = list(title = "z")
+			)
+		)
+	
+	sf_trips_sub$flow_id_temp <- 1:nrow(sf_trips_sub)
+	gp <- ggplot() +
+		geom_sf(data = sf_trips_sub %>%
+							filter(flow_id_temp %in% moved_flows), 
+						aes(geometry = o_closest_point, color = "Origin (moved)"), size = 1) +
+		geom_sf(data = sf_trips_sub %>%
+							filter(flow_id_temp %in% moved_flows), 
+						aes(geometry = d_closest_point, color = "Destination (moved)"), size = 1) +
+		geom_sf(data = sf_trips_sub %>%
+							filter(flow_id_temp %in% border_flows), 
+						aes(geometry = o_closest_point, color = "Origin (border)"), size = 1) +
+		geom_sf(data = sf_trips_sub %>%
+							filter(flow_id_temp %in% border_flows), 
+						aes(geometry = d_closest_point, color = "Destination (border)"), size = 1) +
+		geom_sf(data = sf_network, aes(geometry = geom_way), color = "gray", alpha = 0.5, size = 0.5) +
+		# Farben definieren
+		scale_color_manual(values = c(
+			"Origin (moved)" = "darkseagreen4",
+			"Destination (moved)" = "darkseagreen1",
+			"Origin (border)" = "red",
+			"Destination (border)" = "darkred"
+		)) +
+		# Plot-Labels und Titel
+		labs(title = "Cluster Movements",
+				 color = "Point Type") +
+		theme_minimal() 
+	return(list("pacmap_plotly" = ply, "od_pts_on_rd_network" = gp))
+}

@@ -89,7 +89,7 @@ for(i in 1:length(int_seq)){
 	query <- paste0("CREATE INDEX ON ",
 									char_schema, ".flow_distances (flow_id_i, flow_id_j);")
 	dbExecute(con, query)
-	
+	flow_id
 	
 	### Calculate network based distances ----------------------------------------
 	# main_nd_dist_mat_cpu(char_schema = char_schema,

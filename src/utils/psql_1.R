@@ -361,7 +361,8 @@ psql1_get_raw_trip_data <- function(con) {
     AND table_name NOT LIKE '%2po_4pgr%'
      AND table_name NOT LIKE '%mapped%'
     AND table_type = 'BASE TABLE'
-    AND table_schema NOT IN ('pg_catalog', 'information_schema');
+    AND table_schema NOT IN ('pg_catalog', 'information_schema')
+    AND table_schema IN ('public');
   ")
 	
 	available_trip_data <- dbGetQuery(con, query)
@@ -533,7 +534,32 @@ psql1_create_schema <- function(con, char_schema) {
 }
 
 
-psql1_calc_distances <- function(char_schema, id_start, id_end, local_con) {
+psql1_calc_euclidean_flow_dist <- function(char_schema, id_start, id_end, local_con) {
+	query <- paste0("INSERT INTO ", char_schema, ".flow_distances
+      (
+          flow_id_i,
+          flow_id_j,
+          flow_manhattan_pts_euclid
+      )
+      SELECT
+          a.flow_id AS flow_id_i,
+          b.flow_id AS flow_id_j,
+          
+          -- Manhattan distance between flows based on euclidean OD points distance
+          CAST(ROUND(ST_Distance(a.origin_geom, b.origin_geom)) AS INTEGER) +
+          CAST(ROUND(ST_Distance(a.dest_geom, b.dest_geom)) AS INTEGER) AS flow_manhatten_pts_euclid
+  
+        
+      FROM ", char_schema, ".data a
+      JOIN ", char_schema, ".data b
+      ON a.flow_id < b.flow_id
+      WHERE a.flow_id BETWEEN ", id_start, " AND ", id_end, ";")
+	
+	dbExecute(local_con, query)
+}
+
+
+psql1_calc_distances_all <- function(char_schema, id_start, id_end, local_con) {
 	query <- paste0("INSERT INTO ", char_schema, ".flow_distances
       (
           flow_id_i,

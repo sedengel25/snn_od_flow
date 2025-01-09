@@ -152,7 +152,7 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 		rename(from = flow_m,
 					 to = flow_n)
 	
-	return(dt_flow_nd)
+	#return(dt_flow_nd)
 	
 	print(head(dt_flow_nd))
 	num_ids <- nrow(sf_trips)
@@ -161,11 +161,13 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 		cat("Problem: Indizes überschreiten die Matrix-Dimension. Maximaler Index:", max_index, 
 				"Matrixgröße:", num_ids, "\n")
 	}
-	
+	gc()
 	matrix_flow_nd <- matrix(0, nrow = num_ids, ncol = num_ids)
+	gc()
 	matrix_flow_nd[cbind(dt_flow_nd$from, dt_flow_nd$to)] <- dt_flow_nd$distance
+	gc()
 	matrix_flow_nd[cbind(dt_flow_nd$to, dt_flow_nd$from)] <- dt_flow_nd$distance
-	
+	rm(dt_flow_nd)
 	gc()
 	
 	return(matrix_flow_nd)
@@ -209,15 +211,24 @@ main_calc_diff_flow_distances <- function(char_schema, char_trips, n, cores){
 	dbExecute(con, query)
 	
 	
+# 	query <- paste0("CREATE TABLE ", paste0(char_schema, ".flow_distances"),
+# 									" (flow_id_i INTEGER,
+# 									flow_id_j INTEGER,
+# 									flow_manhattan_pts_euclid INTEGER,
+#         				  flow_chebyshev_pts_euclid INTEGER,
+#         			    flow_euclid_norm DOUBLE PRECISION,
+#         					flow_euclid INTEGER,
+#         					length_similarity INTEGER,
+#         					cosine_similarity DOUBLE PRECISION,
+# 									flow_manhattan_pts_network INTEGER);")
+# 	cat(query)
+# 	dbExecute(con, query)
+	
+	
 	query <- paste0("CREATE TABLE ", paste0(char_schema, ".flow_distances"),
 									" (flow_id_i INTEGER,
 									flow_id_j INTEGER,
 									flow_manhattan_pts_euclid INTEGER,
-        				  flow_chebyshev_pts_euclid INTEGER,
-        			    flow_euclid_norm DOUBLE PRECISION,
-        					flow_euclid INTEGER,
-        					length_similarity INTEGER,
-        					cosine_similarity DOUBLE PRECISION,
 									flow_manhattan_pts_network INTEGER);")
 	cat(query)
 	dbExecute(con, query)
@@ -239,10 +250,14 @@ main_calc_diff_flow_distances <- function(char_schema, char_trips, n, cores){
 		id_start <- ifelse(i == 1, 1, chunks[i - 1] + 1)
 		id_end <- chunks[i]
 		
-		psql1_calc_distances(char_schema = char_schema,
-												 id_start = id_start,
-												 id_end = id_end,
-												 local_con = local_con)
+		# psql1_calc_distances_all(char_schema = char_schema,
+		# 										 id_start = id_start,
+		# 										 id_end = id_end,
+		# 										 local_con = local_con)
+		psql1_calc_euclidean_flow_dist(char_schema = char_schema,
+		id_start = id_start,
+		id_end = id_end,
+		local_con = local_con)
 		
 
 		
@@ -267,26 +282,25 @@ main_nd_dist_mat_cpu <- function(char_schema,
 
 	
 	chunks <- r1_create_chunks(cores = cores, n = n)
-	# calc_nd_between_od_points(char_schema = char_schema,
-	# 													cores = cores,
-	# 													n = n,
-	# 													char_network = char_network,
-	# 													char_dist_mat = char_dist_mat,
-	# 													chunks = chunks)
-	
-	calc_nd2_between_od_points(char_schema = char_schema,
+	calc_nd_between_od_points(char_schema = char_schema,
 														cores = cores,
 														n = n,
 														char_network = char_network,
 														char_dist_mat = char_dist_mat,
 														chunks = chunks)
+	
+	# calc_nd2_between_od_points(char_schema = char_schema,
+	# 													cores = cores,
+	# 													n = n,
+	# 													char_network = char_network,
+	# 													char_dist_mat = char_dist_mat,
+	# 													chunks = chunks)
 
 	t1 <- proc.time()
 	print(chunks)
 	insert_flow_nd_in_distance_table(char_schema = char_schema,
 																	 chunks = chunks,
 																	 cores = cores)
-
 	
 }
 

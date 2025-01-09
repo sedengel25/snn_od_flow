@@ -11,7 +11,7 @@ sourceCpp("./src/helper_functions.cpp")
 ################################################################################
 list.files(path = path_bbox_coordinates, pattern = "*.poly")
 
-char_region_abb <- "dd_center"
+char_region_abb <- "dd"
 
 char_polygon_filename <- paste0(char_region_abb, ending_polygon)   
 
@@ -45,7 +45,7 @@ osm2po_create_routable_network(int_crs = 32632)
 sf_network <- st_read(con, char_network) %>%
 	mutate(m = km*1000)
 
-ncol(sf_network)
+plot(sf_network$geom_way)
 
 sfn_network <- as_sfnetwork(sf_network)
 

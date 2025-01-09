@@ -21,16 +21,24 @@ print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
 char_dt_dist_mat <-  char_av_dt_dist_mat_files[16]
 char_buffer <- "50000"
-dt_dist_mat <- read_rds(here::here(
-	char_path_dt_dist_mat,
-	char_dt_dist_mat))
+# dt_dist_mat <- read_rds(here::here(
+# 	char_path_dt_dist_mat,
+# 	char_dt_dist_mat))
 
 
 # m-Spalte runden und in Integer umwandeln
-dt_dist_mat <- dt_dist_mat %>%
-	mutate(m = round(m, 0) %>% as.integer())
-
-
+# dt_dist_mat <- dt_dist_mat %>%
+# 	mutate(m = round(m, 0) %>% as.integer())
+char_dist_mat <- paste0("dd_",
+												char_buffer,
+												"_dist_mat")
+# dbWriteTable(con, char_dist_mat, value = dt_dist_mat)
+# rm(dt_dist_mat)
+# gc()
+# query <- paste0("CREATE INDEX idx_char_dist_mat_source_target ON ",
+# 								char_dist_mat, " (source, target);")
+# 
+# dbExecute(con, query)
 #################################################################################
 # 2. OD flow data
 ################################################################################
@@ -48,9 +56,9 @@ sf_trips$hour <- lubridate::hour(sf_trips$start_datetime)
 sf_trips$weekday <- lubridate::wday(sf_trips$start_datetime, week_start = 1)
 sf_trips <- sf_trips %>%
 	arrange(start_datetime)
-dist_filter <- 1500
-int_kw <- c(9:11)
-int_wday <- c(1:4)
+dist_filter <- 200
+int_kw <- c(8:11)
+int_wday <- c(1:3)
 #int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
 	filter(week %in% int_kw) %>%
@@ -108,7 +116,7 @@ st_write(sf_trips_sub, con, Id(schema=char_schema,
 ################################################################################
 reticulate::use_virtualenv("r-reticulate", required = TRUE)
 np <- reticulate::import("numpy")
-
+hdbscan <- reticulate::import("hdbscan")
 
 
 
@@ -129,29 +137,37 @@ dbExecute(con, query)
 
 
 ### Calculate network based distances ----------------------------------------
-# main_nd_dist_mat_cpu(char_schema = char_schema,
-# 										 char_network = char_network,
-# 										 char_dist_mat = char_dist_mat,
-# 										 n = nrow(sf_trips_sub),
-# 										 cores = int_cores)
+main_nd_dist_mat_cpu(char_schema = char_schema,
+										 char_network = char_network,
+										 char_dist_mat = char_dist_mat,
+										 n = nrow(sf_trips_sub),
+										 cores = int_cores)
 
-matrix_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
+# matrix_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
+# rm(dt_dist_mat)
+# gc()
+# matrix_flow_nd[1:5,1:5]
 path_pacmap <- here::here(path_python, char_schema)
-dist_measure <- "flow_manhattan_pts_network"
-npy_file <- here::here(path_pacmap, dist_measure, "dist_mat.npy")
-np$save(npy_file, np$array(matrix_flow_nd, dtype = "int32"))
-rm(matrix_flow_nd)
-gc()
+# dist_measure <- "flow_manhattan_pts_network"
+# folder <- here::here(path_pacmap, dist_measure)
+# if (!dir.exists(folder)) {
+# 	dir.create(folder, recursive = TRUE, mode = "0777")
+# 	message("Directory created with full permissions: ", folder)
+# } else {
+# 	message("Directory already exists: ", folder)
+# }
+# npy_file <- here::here(path_pacmap, dist_measure, "dist_mat.npy")
+# np$save(npy_file, np$array(matrix_flow_nd, dtype = "int32"))
+# rm(matrix_flow_nd)
+# gc()
 char_dist_measures <- c("flow_manhattan_pts_euclid",
-												"flow_chebyshev_pts_euclid",
-												"flow_euclid",
 												"flow_manhattan_pts_network")
 
 
 ################################################################################
 # 4. Converting of distance matrices into numpy arrays
 ################################################################################
-for(dist_measure in char_dist_measures){
+for(dist_measure in char_dist_measures[2]){
 	folder <- here::here(path_pacmap, dist_measure)
 	if (!dir.exists(folder)) {
 		dir.create(folder, recursive = TRUE, mode = "0777")
@@ -160,44 +176,52 @@ for(dist_measure in char_dist_measures){
 		message("Directory already exists: ", folder)
 	}
 
-	if(dist_measure != "flow_manhattan_pts_network"){
-		system2("/usr/bin/sudo", c("chown", "-R", "postgres", folder))
-		main_psql_dist_mat_to_matrix(char_schema = char_schema,
-																 dist_measure = dist_measure,
-																 n = nrow(sf_trips_sub),
-																 cores = int_cores)
-		Sys.sleep(3)
-		system2("python3", args = c(here::here(path_python,
-																					 "read_json_to_npy.py"),
-																"--directory", folder,
-																"--distance", dist_measure),
-						stdout = "", stderr = "")
-	} 
+	system2("/usr/bin/sudo", c("chown", "-R", "postgres", folder))
+	main_psql_dist_mat_to_matrix(char_schema = char_schema,
+															 dist_measure = dist_measure,
+															 n = nrow(sf_trips_sub),
+															 cores = int_cores)
+	Sys.sleep(3)
+	system2("python3", args = c(here::here(path_python,
+																				 "read_json_to_npy.py"),
+															"--directory", folder,
+															"--distance", dist_measure),
+					stdout = "", stderr = "")
+	
 
 }
 
 ################################################################################
 # 5. Creating 23, 3d, 4d pacmap-embeddings
 ################################################################################
-for(dist_measure in char_dist_measures[2:4]){
+
+for(dist_measure in char_dist_measures){
 	folder <- here::here(path_pacmap, dist_measure)
-	for(i in 1:2){
-		if(dist_measure != "flow_manhattan_pts_network"){
-			system2("python3", args = c(here::here(path_python,
-																						 "pacmap_cpu.py"),
-																	"--directory ", folder,
-																	"--distance ", dist_measure,
-																	"--n ", n_samples,
-																	"--i ", i),
-							stdout = "", stderr = "")
-		} else {
-			system2("python3", args = c(here::here(path_python,
-																						 "pacmap_ram.py"),
-																	"--directory ", folder,
-																	"--distance ", dist_measure,
-																	"--i ", i),
-							stdout = "", stderr = "")
-		}
+	for(i in 1:3){
+		system2("python3", args = c(here::here(path_python,
+																					 "pacmap_cpu.py"),
+																"--directory ", folder,
+																"--distance ", dist_measure,
+																"--n ", n_samples,
+																"--i ", i),
+						stdout = "", stderr = "")
+		
+		# if(dist_measure != "flow_manhattan_pts_network"){
+		# 	system2("python3", args = c(here::here(path_python,
+		# 																				 "pacmap_cpu.py"),
+		# 															"--directory ", folder,
+		# 															"--distance ", dist_measure,
+		# 															"--n ", n_samples,
+		# 															"--i ", i),
+		# 					stdout = "", stderr = "")
+		# } else {
+		# 	system2("python3", args = c(here::here(path_python,
+		# 																				 "pacmap_ram.py"),
+		# 															"--directory ", folder,
+		# 															"--distance ", dist_measure,
+		# 															"--i ", i),
+		# 					stdout = "", stderr = "")
+		# }
 	}
 }
 
@@ -205,41 +229,38 @@ for(dist_measure in char_dist_measures[2:4]){
 ################################################################################
 # PaCMAP plots
 ################################################################################
+psql1_get_schemas(con)
+char_schema <- "nb_dd_min250m_kw9_wdays1_2_3_4m_buffer50000m"
+path_pacmap <- here::here(path_python, char_schema)
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+hdbscan <- reticulate::import("hdbscan")
+
 df_pacmap <- np$load(here::here(path_pacmap, 
 																"flow_manhattan_pts_network", 
 																"embedding_3d_1.npy")) %>%
 	as.data.frame() %>%
 	rename("x" = "V1", "y" = "V2", "z" = "V3")
-np_dist_mat <-  np$load(here::here(path_pacmap, 
-																	 "flow_manhattan_pts_network", 
-																	 "dist_mat.npy"))
-np_dist_mat[1:5, 1:5]
-plot_ly(
-	data = df_pacmap, 
-	x = ~x, y = ~y, z = ~z, 
-	type = "scatter3d", 
-	mode = "markers", 
-	marker = list(
-		size = 4, 
-		opacity = 0.25 # Transparenz der Punkte
-	)
-) %>%
-	layout(
-		scene = list(
-			xaxis = list(title = "x"),
-			yaxis = list(title = "y"),
-			zaxis = list(title = "z")
-		)
-	)
-kmeans_result <- kmeans(df_pacmap, centers = 4, nstart = 100)
 
-df_pacmap$cluster <- kmeans_result$cluster 
+# np_dist_mat <-  np$load(here::here(path_pacmap,
+# 																	 "flow_manhattan_pts_network",
+# 																	 "dist_mat.npy"))
+# np_dist_mat[1:5, 1:5]
+# class(np_dist_mat)
+# k <- 25
+# minpts <- 12
+# eps <- 13
+# snn_res <- sNNclust(np_dist_mat, k, eps, minpts)
+# rm(np_dist_mat)
+# gc()
 
-
-df_pacmap$id <- paste0("Point-", 1:nrow(df_pacmap))
+df_pacmap <- py_hdbscan(np, hdbscan, df_pacmap, 40)
+# kmeans_res <- kmeans(df_pacmap, centers = 4, nstart = 100)
+# df_pacmap$cluster <- kmeans_res$cluster
+table(df_pacmap$cluster)
 
 plot_ly(
-	data = df_pacmap, 
+	data = df_pacmap %>% filter(cluster!=0), 
 	x = ~x, 
 	y = ~y, 
 	z = ~z, 
@@ -250,7 +271,7 @@ plot_ly(
 		size = 4, 
 		opacity = 0.25 # Transparenz der Punkte
 	),
-	text = ~id, # Text für Hover-Effekt (ID)
+	text = ~as.character(paste0("Flow -", flow_id)), # Text für Hover-Effekt (ID)
 	hoverinfo = "text" # Nur den Text anzeigen (ID)
 ) %>%
 	layout(
@@ -261,7 +282,38 @@ plot_ly(
 		)
 	)
 
-
-sf_trips_sub$cluster_pred <- kmeans_result$cluster
+sf_trips_sub$cluster_pred <- df_pacmap$cluster
 st_write(sf_trips_sub, con, Id(schema=char_schema, 
-															 table = "kmeans_k4"))
+															 table = "hdbscan_minpts35"))
+
+
+df_pacmap_sub <- df_pacmap %>%
+	filter(cluster==2)
+
+
+
+df_pacmap_sub <- py_hdbscan(np, hdbscan, df_pacmap_sub, 30)
+
+
+plot_ly(
+	data = df_pacmap_sub %>% filter(cluster!=0), 
+	x = ~x, 
+	y = ~y, 
+	z = ~z, 
+	color = ~factor(cluster), # Cluster einfärben
+	type = "scatter3d", 
+	mode = "markers", 
+	marker = list(
+		size = 4, 
+		opacity = 0.25 # Transparenz der Punkte
+	),
+	text = ~factor(cluster), # Text für Hover-Effekt (ID)
+	hoverinfo = "text" # Nur den Text anzeigen (ID)
+) %>%
+	layout(
+		scene = list(
+			xaxis = list(title = "x"),
+			yaxis = list(title = "y"),
+			zaxis = list(title = "z")
+		)
+	)
