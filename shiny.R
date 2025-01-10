@@ -1,9 +1,57 @@
-library(shiny)
-library(plotly)
-library(dplyr)
-library(RANN)  # Für die schnelle Berechnung der k nächsten Nachbarn
-library(ggplot2)
-library(sf)
+Rcpp::sourceCpp("./src/helper_functions.cpp")
+source("./src/config.R")
+source("./main_functions.R")
+
+
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+hdbscan <- reticulate::import("hdbscan")
+#################################################################################
+# 1. Network data
+################################################################################
+available_networks <- psql1_get_available_networks(con)
+print(available_networks)
+char_network <- available_networks[1, "table_name"]
+sf_network <- st_read(con, char_network) 
+#################################################################################
+# 2. Get original OD flow data based on subsets
+################################################################################
+subset <- c(15001, 20001)
+char_schema <- paste0("data_", paste0(subset, collapse = "_"))
+available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
+print(available_mapped_trip_data)
+char_data <- available_mapped_trip_data[1, "table_name"]
+sf_trips <- st_read(con, char_data) %>%
+	rename("origin_id" = "id_edge_origin",
+				 "dest_id" = "id_edge_dest") 
+
+sf_trips <- sf_trips %>%
+	arrange(start_datetime) %>%
+	filter(trip_distance >= 100)
+
+sf_trips_sub <- sf_trips %>%
+	mutate(flow_id = 1:nrow(sf_trips)) %>%
+	filter(flow_id >= min(subset) & flow_id <= max(subset))
+sf_trips_sub$flow_id_temp <- 1:nrow(sf_trips_sub)
+
+
+
+
+
+
+matrix_pacmap_euclid <- np$load(here::here(path_python, 
+																		char_schema,
+																		"flow_manhattan_pts_euclid",
+																		"embedding_3d_1.npy")) 
+df_pacmap_euclid <-  py_hdbscan(np, hdbscan, matrix_pacmap_euclid, 20)
+
+matrix_pacmap_network <- np$load(here::here(path_python, 
+																		char_schema,
+																		"flow_manhattan_pts_network",
+																		"embedding_3d_5.npy")) 
+	
+df_pacmap_network <-  py_hdbscan(np, hdbscan, matrix_pacmap_network, 20)
+
 
 # Shiny App
 ui <- fluidPage(
@@ -30,7 +78,7 @@ server <- function(input, output, session) {
 	}
 	
 	# Reactive: Ausgewählte Punkte und Modus (2D oder 3D)
-	is_3d <- reactive({ "z" %in% colnames(df_cluster_euclid) })
+	is_3d <- reactive({ "z" %in% colnames(df_pacmap_euclid) })
 	
 	selected_points <- reactiveVal()
 	
@@ -46,7 +94,7 @@ server <- function(input, output, session) {
 			click_data <- event_data("plotly_click", source = "scatter_euclid")
 			if (!is.null(click_data)) {
 				clicked_id <- click_data$customdata
-				selected_ids <- get_nearest_neighbors(df_cluster_euclid, clicked_id, input$knn_slider)
+				selected_ids <- get_nearest_neighbors(df_pacmap_euclid, clicked_id, input$knn_slider)
 				selected_points(selected_ids)
 			}
 		}
@@ -64,7 +112,7 @@ server <- function(input, output, session) {
 			click_data <- event_data("plotly_click", source = "scatter_network")
 			if (!is.null(click_data)) {
 				clicked_id <- click_data$customdata
-				selected_ids <- get_nearest_neighbors(df_cluster_network, clicked_id, input$knn_slider)
+				selected_ids <- get_nearest_neighbors(df_pacmap_network, clicked_id, input$knn_slider)
 				selected_points(selected_ids)
 			}
 		}
@@ -74,7 +122,7 @@ server <- function(input, output, session) {
 	output$scatter_plot_euclid <- renderPlotly({
 		highlight_ids <- selected_points()
 		
-		plot_data <- df_cluster_euclid %>%
+		plot_data <- df_pacmap_euclid %>%
 			mutate(color = ifelse(flow_id %in% highlight_ids, "Selected", "Default"))
 		
 		plot_type <- if (is_3d()) "scatter3d" else "scatter"
@@ -100,7 +148,7 @@ server <- function(input, output, session) {
 	output$scatter_plot_network <- renderPlotly({
 		highlight_ids <- selected_points()
 		
-		plot_data <- df_cluster_network %>%
+		plot_data <- df_pacmap_network %>%
 			mutate(color = ifelse(flow_id %in% highlight_ids, "Selected", "Default"))
 		
 		plot_type <- if (is_3d()) "scatter3d" else "scatter"
