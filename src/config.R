@@ -54,6 +54,7 @@ library(jsonlite)
 library(xtable)
 library(dplyr)
 library(ggh4x)
+library(shiny)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
