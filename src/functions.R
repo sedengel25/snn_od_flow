@@ -941,19 +941,35 @@ py_hdbscan_dbcv <- function(np,
 py_hdbscan <- function(np, 
 											 hdbscan,
 											 matrix_pacmap, 
-											minpts) {
+											 minpts) {
 	x <- np$array(matrix_pacmap)
 	hdbscan_model <- hdbscan$HDBSCAN(min_cluster_size = as.integer(minpts))
 	hdbscan_res <- hdbscan_model$fit(x)
 	print(hdbscan_res$labels_ %>% table)
+	
 	np_labels <- np$array(hdbscan_res$labels_, dtype = "int32")
-  df_cluster <- matrix_pacmap %>%
-  	as.data.frame() %>%
-  	rename("x" = "V1", "y" = "V2", "z" = "V3")
-  df_cluster$cluster <- hdbscan_res$labels_
+	
+	# Check dimensions of matrix_pacmap
+	dim_names <- colnames(matrix_pacmap)
+	
+	if (ncol(matrix_pacmap) == 3) {
+		df_cluster <- matrix_pacmap %>%
+			as.data.frame() %>%
+			rename("x" = "V1", "y" = "V2", "z" = "V3")
+	} else if (ncol(matrix_pacmap) == 2) {
+		df_cluster <- matrix_pacmap %>%
+			as.data.frame() %>%
+			rename("x" = "V1", "y" = "V2")
+	} else {
+		stop("matrix_pacmap must have either 2 or 3 columns.")
+	}
+	
+	df_cluster$cluster <- hdbscan_res$labels_
 	df_cluster$flow_id <- 1:nrow(df_cluster)
+	
 	return(df_cluster)
 }
+
 
 
 
@@ -1431,17 +1447,30 @@ insert_flow_nd_in_distance_table <- function(char_schema, chunks, cores) {
 
 
 
-show_moved_vs_border_plot <- function(result, int_row, df_cluster_euclid, sf_trips_sub, sf_network, k) {
+show_moved_vs_border_plot <- function(result, 
+																			int_row, 
+																			df_cluster_euclid, 
+																			df_cluster_network,
+																			sf_trips_sub, 
+																			sf_network, 
+																			k) {
 	moved_flows <- result[int_row,"flows"] %>% pull %>% unlist()
 	df_moved_flows <- df_cluster_euclid %>% filter(flow_id %in% moved_flows)
-	#df_moved_flows <- df_cluster_euclid %>% filter(flow_id ==1353)
 	df_remaining_flows <- df_cluster_euclid %>% filter(!flow_id %in% moved_flows)
-	knn_result <- nn2(
-		data = df_remaining_flows[, c("x", "y", "z")],  # Features für kNN
-		query = df_moved_flows[, c("x", "y", "z")],  # Punkte von moved_flows
-		k = k
-	)
 	
+	if ("z" %in% colnames(df_cluster_euclid)) {
+		knn_result <- nn2(
+			data = df_remaining_flows[, c("x", "y", "z")],  # Features für kNN
+			query = df_moved_flows[, c("x", "y", "z")],  # Punkte von moved_flows
+			k = k
+		)
+	} else {
+		knn_result <- nn2(
+			data = df_remaining_flows[, c("x", "y")],  # Features für kNN
+			query = df_moved_flows[, c("x", "y")],  # Punkte von moved_flows
+			k = k
+		)
+	}
 	
 	border_indices <- knn_result$nn.idx %>% as.vector() %>% unique()
 	border_flows <-  df_remaining_flows[border_indices, "flow_id"]
@@ -1455,54 +1484,147 @@ show_moved_vs_border_plot <- function(result, int_row, df_cluster_euclid, sf_tri
 				TRUE ~ "Neither"
 			)
 		)
-	ply <- plot_ly(
-		data = df_cluster_euclid, 
-		x = ~x, 
-		y = ~y, 
-		z = ~z, 
-		color = ~factor(category), # Kategorie einfärben
-		type = "scatter3d", 
-		mode = "markers", 
-		marker = list(
-			size = 4, 
-			opacity = 0.5 # Transparenz der Punkte
-		),
-		text = ~as.character(paste0("Flow -", flow_id, ", Category: ", category)), # Text für Hover-Effekt
-		hoverinfo = "text" # Nur den Text anzeigen
-	) %>%
-		layout(
-			scene = list(
-				xaxis = list(title = "x"),
-				yaxis = list(title = "y"),
-				zaxis = list(title = "z")
-			)
-		)
 	
 	sf_trips_sub$flow_id_temp <- 1:nrow(sf_trips_sub)
-	gp <- ggplot() +
+	gp_pts <- ggplot() +
 		geom_sf(data = sf_trips_sub %>%
-							filter(flow_id_temp %in% moved_flows), 
-						aes(geometry = o_closest_point, color = "Origin (moved)"), size = 1) +
+							filter(flow_id_temp %in% moved_flows),
+						aes(geometry = o_closest_point, color = "Origin (moved)"), size = 2.5) +
 		geom_sf(data = sf_trips_sub %>%
-							filter(flow_id_temp %in% moved_flows), 
-						aes(geometry = d_closest_point, color = "Destination (moved)"), size = 1) +
+							filter(flow_id_temp %in% moved_flows),
+						aes(geometry = d_closest_point, color = "Destination (moved)"), size = 2.5) +
 		geom_sf(data = sf_trips_sub %>%
-							filter(flow_id_temp %in% border_flows), 
-						aes(geometry = o_closest_point, color = "Origin (border)"), size = 1) +
+							filter(flow_id_temp %in% border_flows),
+						aes(geometry = o_closest_point, color = "Origin (border)"), size = .5) +
 		geom_sf(data = sf_trips_sub %>%
-							filter(flow_id_temp %in% border_flows), 
-						aes(geometry = d_closest_point, color = "Destination (border)"), size = 1) +
+							filter(flow_id_temp %in% border_flows),
+						aes(geometry = d_closest_point, color = "Destination (border)"), size = .5) +
 		geom_sf(data = sf_network, aes(geometry = geom_way), color = "gray", alpha = 0.5, size = 0.5) +
-		# Farben definieren
 		scale_color_manual(values = c(
 			"Origin (moved)" = "darkseagreen4",
-			"Destination (moved)" = "darkseagreen1",
+			"Destination (moved)" = "orange",
 			"Origin (border)" = "red",
 			"Destination (border)" = "darkred"
 		)) +
-		# Plot-Labels und Titel
 		labs(title = "Cluster Movements",
 				 color = "Point Type") +
-		theme_minimal() 
-	return(list("pacmap_plotly" = ply, "od_pts_on_rd_network" = gp))
+		theme_minimal()
+	
+	gp_flow <- ggplot() +
+		geom_sf(data = sf_trips_sub %>%
+							filter(flow_id_temp %in% moved_flows),
+						aes(geometry = line_geom, color = "Flow (moved)"), size = 1) +
+		geom_sf(data = sf_trips_sub %>%
+							filter(flow_id_temp %in% border_flows),
+						aes(geometry = line_geom, color = "Flow (border)"), size = 1) +
+		geom_sf(data = sf_network, aes(geometry = geom_way), color = "gray", alpha = 0.5, size = 0.5) +
+		scale_color_manual(values = c(
+			"Flow (moved)" = "darkseagreen4",
+			"Flow (border)" = "orange"
+		)) +
+		labs(title = "Cluster movements",
+				 color = "Flow type") +
+		theme_minimal()
+	
+	if ("z" %in% colnames(df_cluster_euclid)) {
+		ply_move <- plot_ly(
+			data = df_cluster_euclid, 
+			x = ~x, 
+			y = ~y, 
+			z = ~z, 
+			color = ~factor(category), # Kategorie einfärben
+			type = "scatter3d", 
+			mode = "markers", 
+			marker = list(
+				size = 4, 
+				opacity = 0.5 # Transparenz der Punkte
+			),
+			text = ~as.character(paste0("Flow -", flow_id, ", Category: ", category)), # Text für Hover-Effekt
+			hoverinfo = "text" # Nur den Text anzeigen
+		) %>%
+			layout(
+				title = "Show where network distance pulls flows",
+				scene = list(
+					xaxis = list(title = "x"),
+					yaxis = list(title = "y"),
+					zaxis = list(title = "z")
+				)
+			)
+		
+		ply_euclid_cl <- plot_ly(
+			data = df_cluster_euclid, 
+			x = ~x, 
+			y = ~y, 
+			z = ~z, 
+			color = ~factor(cluster), # Kategorie einfärben
+			type = "scatter3d", 
+			mode = "markers", 
+			marker = list(
+				size = 4, 
+				opacity = 0.5 # Transparenz der Punkte
+			),
+			text = ~as.character(paste0("Flow -", flow_id)), # Text für Hover-Effekt
+			hoverinfo = "text" # Nur den Text anzeigen
+		) %>%
+			layout(
+				title = "Cluster euclid visualization",
+				scene = list(
+					xaxis = list(title = "x"),
+					yaxis = list(title = "y"),
+					zaxis = list(title = "z")
+				)
+			)
+		
+		ply_net_cl <- plot_ly(
+			data = df_cluster_network, 
+			x = ~x, 
+			y = ~y, 
+			z = ~z, 
+			color = ~factor(cluster_mapped), # Kategorie einfärben
+			type = "scatter3d", 
+			mode = "markers", 
+			marker = list(
+				size = 4, 
+				opacity = 0.5 # Transparenz der Punkte
+			),
+			text = ~as.character(paste0("Flow -", flow_id)), # Text für Hover-Effekt
+			hoverinfo = "text" # Nur den Text anzeigen
+		) %>%
+			layout(
+				title = "Cluster network visualization",
+				scene = list(
+					xaxis = list(title = "x"),
+					yaxis = list(title = "y"),
+					zaxis = list(title = "z")
+				)
+			)
+		
+		return(list("pacmap_euclid_clusters" = ply_euclid_cl, 
+								"pacmap_network_clusters" = ply_net_cl, 
+								"pacmap_euclid_moved_flows" = ply_move,
+								"od_pts_on_rd_network" = gp_pts,
+								"od_flows_on_rd_network" = gp_flow))
+	} else {
+		gg_move <- ggplot(df_cluster_euclid, aes(x = x, y = y, color = category)) +
+			geom_point(alpha = 0.3, size = 2) +
+			labs(title = "Show where network distance pulls flows", color = "Category") +
+			theme_minimal()
+		
+		gg_euclid_cl <- ggplot(df_cluster_euclid, aes(x = x, y = y, color = factor(cluster))) +
+			geom_point(alpha = 0.3, size = 2) +
+			labs(title = "Cluster euclid visualization", color = "Cluster") +
+			theme_minimal()
+		
+		gg_net_cl <- ggplot(df_cluster_network, aes(x = x, y = y, color = factor(cluster_mapped))) +
+			geom_point(alpha = 0.3, size = 2) +
+			labs(title = "Cluster network visualization", color = "Cluster Mapped") +
+			theme_minimal()
+		
+		return(list("pacmap_euclid_clusters" = gg_euclid_cl, 
+								"pacmap_network_clusters" = gg_net_cl, 
+								"pacmap_euclid_moved_flows" = gg_move,
+								"od_pts_on_rd_network" = gp_pts,
+								"od_flows_on_rd_network" = gp_flow))
+	}
 }
+
