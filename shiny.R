@@ -65,7 +65,7 @@ hdbscan <- reticulate::import("hdbscan")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[1, "table_name"]
+char_network <- available_networks[3, "table_name"]
 sf_network <- st_read(con, char_network) 
 #################################################################################
 # 2. Get original OD flow data based on subsets
@@ -74,7 +74,7 @@ sf_network <- st_read(con, char_network)
 # char_schema <- paste0("data_", paste0(subset, collapse = "_"))
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[5, "schema_name"]
+char_schema <- available_schemas[6, "schema_name"]
 sf_trips_sub <- st_read(
 	con,
 	query = paste0("SELECT * FROM ", 
@@ -101,8 +101,8 @@ sf_trips_sub <- st_read(
 
 
 
-int_min_cl_size <- 12
-
+int_min_cl_size <- 10
+char_schema <- "nb_dd_mickten_min100m_kw7_8_9_10_11_12_wdays1_2_3_4_5m_buffer50000m"
 matrix_pacmap_euclid <- np$load(here::here(path_python, 
 																		char_schema,
 																		"flow_manhattan_pts_euclid",
@@ -126,6 +126,7 @@ df_pacmap_network <-  py_hdbscan(np, hdbscan, matrix_pacmap_network, int_min_cl_
 # mean(cluster_stats_net %>% filter(cluster_net != -1) %>% pull(sd_trip_distance))
 # cluster_stats_euclid <- get_length_var_cos_sim(sf_trips_sub, "cluster_euclid")
 # mean(cluster_stats_euclid %>% filter(cluster_euclid != -1) %>% pull(sd_trip_distance))
+
 
 
 library(shiny)
@@ -173,6 +174,10 @@ ui <- fluidPage(
 		column(6, 
 					 radioButtons("show_clusters", "Show Clusters:", choices = c("Yes", "No"), selected = "No", inline = TRUE)
 		)
+	),
+	fluidRow(
+		column(6, textOutput("euclid_cluster_info")),
+		column(6, textOutput("network_cluster_info"))
 	)
 )
 
@@ -325,6 +330,27 @@ server <- function(input, output, session) {
 			layout(title = "Network Clustering (3D)")
 	})
 	
+	# Kennzahlen für Cluster-Informationen
+	output$euclid_cluster_info <- renderText({
+		req(reactive_clusters$df_pacmap_euclid)
+		clusters <- reactive_clusters$df_pacmap_euclid$cluster
+		paste(
+			"Euclidean Clustering:",
+			"Number of Clusters:", length(unique(clusters[clusters != -1])),
+			"Noise Flows:", sum(clusters == -1)
+		)
+	})
+	
+	output$network_cluster_info <- renderText({
+		req(reactive_clusters$df_pacmap_network)
+		clusters <- reactive_clusters$df_pacmap_network$cluster
+		paste(
+			"Network Clustering:",
+			"Number of Clusters:", length(unique(clusters[clusters != -1])),
+			"Noise Flows:", sum(clusters == -1)
+		)
+	})
+	
 	# Flow Map (Leaflet)
 	output$flow_map <- renderLeaflet({
 		req(selected_points())
@@ -344,3 +370,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
