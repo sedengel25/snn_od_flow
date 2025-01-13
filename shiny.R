@@ -1,62 +1,11 @@
 Rcpp::sourceCpp("./src/helper_functions.cpp")
 source("./src/config.R")
 source("./main_functions.R")
-library(coop)
+#library(coop)
+
 #################################################################################
 # Functions
 ################################################################################
-
-get_length_var_cos_sim <- function(sf_trips, group_by_column = "cluster_ent") {
-	if (!group_by_column %in% names(sf_trips)) {
-		stop("The specified group_by_column does not exist in the dataset.")
-	}
-	
-	# Sicherstellen, dass die Geometrie nur Punkte enthält
-	if (!all(st_geometry_type(sf_trips$o_closest_point) == "POINT")) {
-		stop("o_closest_point must contain only POINT geometries.")
-	}
-	
-	if (!all(st_geometry_type(sf_trips$d_closest_point) == "POINT")) {
-		stop("d_closest_point must contain only POINT geometries.")
-	}
-	
-	sf_trips %>%
-		group_by(across(all_of(group_by_column))) %>%
-		summarize(
-			mean_trip_distance = mean(trip_distance, na.rm = TRUE),
-			sd_trip_distance = sd(trip_distance, na.rm = TRUE),  # Standardabweichung
-			cosine_similarity_flows = {
-				# Extrahiere Start- und Ziel-Koordinaten der aktuellen Gruppe
-				origin_matrix <- st_coordinates(st_geometry(o_closest_point[cur_group_rows()]))
-				dest_matrix <- st_coordinates(st_geometry(d_closest_point[cur_group_rows()]))
-				
-				# Kombiniere die Matrizen, um eine einzige Matrix zu erstellen
-				combined_matrix <- rbind(origin_matrix, dest_matrix)
-				print("Combined matrix:")
-				print(head(combined_matrix))
-				# Cosine Similarity für die kombinierte Matrix berechnen
-				cosine_matrix <- coop::cosine(t(combined_matrix))  # Transponieren für Spaltenvektoren
-				print("Cosine matrix:")
-				print(cosine_matrix[1:5, 1:5])
-				# Extrahiere relevante Werte (oberer Dreiecksteil ohne Diagonale)
-				cosine_values <- cosine_matrix[lower.tri(cosine_matrix)]
-				
-				# Mittelwert der Cosine Similarities
-				mean(cosine_values, na.rm = TRUE)
-			},
-			.groups = "drop"
-		)
-}
-
-
-
-cosine_similarity <- function(v1, v2) {
-	sum(v1 * v2) / (sqrt(sum(v1^2)) * sqrt(sum(v2^2)))
-}
-
-
-
-
 reticulate::use_virtualenv("r-reticulate", required = TRUE)
 np <- reticulate::import("numpy")
 hdbscan <- reticulate::import("hdbscan")
@@ -65,7 +14,7 @@ hdbscan <- reticulate::import("hdbscan")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[3, "table_name"]
+char_network <- available_networks[6, "table_name"]
 sf_network <- st_read(con, char_network) 
 #################################################################################
 # 2. Get original OD flow data based on subsets
@@ -74,20 +23,20 @@ sf_network <- st_read(con, char_network)
 # char_schema <- paste0("data_", paste0(subset, collapse = "_"))
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[6, "schema_name"]
+char_schema <- available_schemas[4, "schema_name"]
 sf_trips_sub <- st_read(
 	con,
-	query = paste0("SELECT * FROM ", 
-								 char_schema, 
+	query = paste0("SELECT * FROM ",
+								 char_schema,
 								 ".data")) %>%
 	rename(flow_id_temp = flow_id)
 # available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 # 
-# char_data <- available_mapped_trip_data[1, "table_name"]
+# char_data <- available_mapped_trip_data[2, "table_name"]
 # 
 # sf_trips <- st_read(con, char_data) %>%
 # 	rename("origin_id" = "id_edge_origin",
-# 				 "dest_id" = "id_edge_dest") 
+# 				 "dest_id" = "id_edge_dest")
 # 
 # sf_trips <- sf_trips %>%
 # 	arrange(start_datetime) %>%
@@ -101,8 +50,8 @@ sf_trips_sub <- st_read(
 
 
 
-int_min_cl_size <- 10
-char_schema <- "nb_dd_mickten_min100m_kw7_8_9_10_11_12_wdays1_2_3_4_5m_buffer50000m"
+int_min_cl_size <- 20
+# char_schema <- "nb_dd_mickten_min100m_kw7_8_9_10_11_12_wdays1_2_3_4_5m_buffer50000m"
 matrix_pacmap_euclid <- np$load(here::here(path_python, 
 																		char_schema,
 																		"flow_manhattan_pts_euclid",
@@ -129,57 +78,63 @@ df_pacmap_network <-  py_hdbscan(np, hdbscan, matrix_pacmap_network, int_min_cl_
 
 
 
-library(shiny)
-library(plotly)
-library(leaflet)
-library(dplyr)
-library(sf)
 
 ui <- fluidPage(
 	titlePanel("Interactive Flow Selection"),
 	fluidRow(
-		column(6, 
-					 selectizeInput(
-					 	"euclid_cluster", 
-					 	"Select Clusters (Euclidean):", 
-					 	choices = NULL, 
-					 	selected = NULL, 
-					 	multiple = TRUE
+		column(4, 
+					 h3("Euclidean Clustering"),
+					 fluidRow(
+					 	column(8,
+					 				 selectizeInput(
+					 				 	"euclid_cluster", 
+					 				 	"Select Clusters (Euclidean):", 
+					 				 	choices = NULL, 
+					 				 	selected = NULL, 
+					 				 	multiple = TRUE
+					 				 )
+					 	),
+					 	column(4,
+					 				 actionButton("go_button_euclid", "Go (Euclidean)", style = "margin-top: 25px;")
+					 	)
 					 ),
-					 checkboxInput("show_noise_euclid", "Show Noise (Cluster -1):", value = TRUE),
+					 textOutput("euclid_cluster_output"),
+					 textInput("flow_id_input_euclid", "Select Flow ID for Euclidean KNN:", value = "", placeholder = "Enter Flow ID"),
 					 plotlyOutput("scatter_plot_euclid", height = "600px")
 		),
-		column(6, 
-					 selectizeInput(
-					 	"network_cluster", 
-					 	"Select Clusters (Network):", 
-					 	choices = NULL, 
-					 	selected = NULL, 
-					 	multiple = TRUE
+		column(4, 
+					 h3("Common Settings"),
+					 sliderInput("min_cluster_size", "Min Cluster Size:", min = 5, max = 100, value = 30),
+					 textInput("knn_text", "Number of Nearest Neighbors (k):", value = "50", placeholder = "Enter k value"),
+					 radioButtons("show_clusters", "Show Clusters:", choices = c("Yes", "No"), selected = "No", inline = TRUE),
+					 checkboxInput("show_noise", "Show Noise (Cluster -1):", value = TRUE)
+		),
+		column(4, 
+					 h3("Network Clustering"),
+					 fluidRow(
+					 	column(8,
+					 				 selectizeInput(
+					 				 	"network_cluster", 
+					 				 	"Select Clusters (Network):", 
+					 				 	choices = NULL, 
+					 				 	selected = NULL, 
+					 				 	multiple = TRUE
+					 				 )
+					 	),
+					 	column(4,
+					 				 actionButton("go_button_network", "Go (Network)", style = "margin-top: 25px;")
+					 	)
 					 ),
-					 checkboxInput("show_noise_network", "Show Noise (Cluster -1):", value = TRUE),
+					 textOutput("network_cluster_output"),
+					 textInput("flow_id_input_network", "Select Flow ID for Network KNN:", value = "", placeholder = "Enter Flow ID"),
 					 plotlyOutput("scatter_plot_network", height = "600px")
 		)
 	),
 	fluidRow(
 		column(12, leafletOutput("flow_map", height = "600px"))
-	),
-	fluidRow(
-		column(6, 
-					 sliderInput("min_cluster_size", "Min Cluster Size:", min = 5, max = 100, value = 30)
-		),
-		column(6, 
-					 sliderInput("knn_slider", "Number of Nearest Neighbors (k):", min = 5, max = 500, value = 50)
-		),
-		column(6, 
-					 radioButtons("show_clusters", "Show Clusters:", choices = c("Yes", "No"), selected = "No", inline = TRUE)
-		)
-	),
-	fluidRow(
-		column(6, textOutput("euclid_cluster_info")),
-		column(6, textOutput("network_cluster_info"))
 	)
 )
+
 
 server <- function(input, output, session) {
 	# Transformiere die Geometrien ins WGS 84 (EPSG:4326)
@@ -217,12 +172,37 @@ server <- function(input, output, session) {
 	# Reactive: Ausgewählte Punkte für beide Scatterplots
 	selected_points <- reactiveVal(NULL)
 	
+	# Reactive: Ausgewählte KNN-Flows für die Karte
+	selected_knn_flows <- reactiveVal(NULL)
+	
 	# KNN-Auswahl
-	get_nearest_neighbors <- function(data, selected_id, k) {
-		selected_point <- data %>% filter(flow_id == selected_id) %>% select(x, y, z)
+	get_nearest_neighbors <- function(data, query_point, k) {
 		all_points <- data %>% select(x, y, z)
-		nn_indices <- FNN::get.knnx(data = all_points, query = selected_point, k = k)$nn.index
+		nn_indices <- FNN::get.knnx(data = as.matrix(all_points), query = as.matrix(query_point), k = k)$nn.index
 		data[nn_indices, ]$flow_id
+	}
+	
+	update_selected_points <- function(sel_flow_id, k, data_source) {
+		if (!is.null(sel_flow_id) && sel_flow_id != "") {
+			query_point <- data_source %>% filter(flow_id == sel_flow_id) %>% select(x, y, z)
+			if (nrow(query_point) > 0) {
+				
+				k <- suppressWarnings(as.numeric(k))
+				if (is.na(k) || k <= 0) {
+					cat("Invalid k value. Must be a positive number.\n")
+					selected_points(NULL)
+					selected_knn_flows(NULL)
+					return()
+				}
+				
+				points <- get_nearest_neighbors(data_source, query_point, k)
+				selected_points(points)
+				selected_knn_flows(points)
+			} else {
+				selected_points(NULL)
+				selected_knn_flows(NULL)
+			}
+		}
 	}
 	
 	# Beobachtung für Euclidean Cluster-Auswahl
@@ -251,13 +231,12 @@ server <- function(input, output, session) {
 		}
 	})
 	
-	# Beobachtung für KNN-Auswahl
+	# Beobachtung für KNN-Auswahl (Per Klick im Scatterplot)
 	observeEvent(event_data("plotly_click", source = "scatter_euclid"), {
 		click_data <- event_data("plotly_click", source = "scatter_euclid")
 		if (!is.null(click_data)) {
 			clicked_id <- click_data$customdata
-			points <- get_nearest_neighbors(reactive_clusters$df_pacmap_euclid, clicked_id, input$knn_slider)
-			selected_points(points)
+			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_pacmap_euclid)
 		}
 	})
 	
@@ -265,16 +244,29 @@ server <- function(input, output, session) {
 		click_data <- event_data("plotly_click", source = "scatter_network")
 		if (!is.null(click_data)) {
 			clicked_id <- click_data$customdata
-			points <- get_nearest_neighbors(reactive_clusters$df_pacmap_network, clicked_id, input$knn_slider)
-			selected_points(points)
+			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_pacmap_network)
 		}
+	})
+	
+	# Beobachtung für Flow ID-Eingabe mit "Go" Button (Euclidean)
+	observeEvent(input$go_button_euclid, {
+		input_id <- input$flow_id_input_euclid
+		cat("written id (Euclidean): ", input_id, "\n")
+		update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_euclid)
+	})
+	
+	# Beobachtung für Flow ID-Eingabe mit "Go" Button (Network)
+	observeEvent(input$go_button_network, {
+		input_id <- input$flow_id_input_network
+		cat("written id (Network): ", input_id, "\n")
+		update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_network)
 	})
 	
 	# Scatter Plot für Euclidean Clustering
 	output$scatter_plot_euclid <- renderPlotly({
 		highlight_ids <- selected_points()
 		show_clusters <- input$show_clusters == "Yes"
-		show_noise <- input$show_noise_euclid
+		show_noise <- input$show_noise
 		
 		plot_data <- reactive_clusters$df_pacmap_euclid %>%
 			filter(show_noise | cluster != -1) %>%
@@ -304,7 +296,7 @@ server <- function(input, output, session) {
 	output$scatter_plot_network <- renderPlotly({
 		highlight_ids <- selected_points()
 		show_clusters <- input$show_clusters == "Yes"
-		show_noise <- input$show_noise_network
+		show_noise <- input$show_noise
 		
 		plot_data <- reactive_clusters$df_pacmap_network %>%
 			filter(show_noise | cluster != -1) %>%
@@ -331,25 +323,39 @@ server <- function(input, output, session) {
 	})
 	
 	# Kennzahlen für Cluster-Informationen
-	output$euclid_cluster_info <- renderText({
+	output$euclid_cluster_output <- renderText({
 		req(reactive_clusters$df_pacmap_euclid)
+		mean_size <- reactive_clusters$df_pacmap_euclid %>%
+			filter(cluster != -1) %>%   # Ignoriere Noise-Cluster
+			group_by(cluster) %>%
+			summarise(size = n()) %>%
+			summarise(mean_size = mean(size)) %>%
+			pull(mean_size)
+		
 		clusters <- reactive_clusters$df_pacmap_euclid$cluster
 		paste(
-			"Euclidean Clustering:",
 			"Number of Clusters:", length(unique(clusters[clusters != -1])),
-			"Noise Flows:", sum(clusters == -1)
+			"\nMean Cluster Size:", mean_size,
+			"\nNoise Flows:", sum(clusters == -1)
 		)
 	})
 	
-	output$network_cluster_info <- renderText({
+	output$network_cluster_output <- renderText({
 		req(reactive_clusters$df_pacmap_network)
+		mean_size <- reactive_clusters$df_pacmap_network %>%
+			filter(cluster != -1) %>%   # Ignoriere Noise-Cluster
+			group_by(cluster) %>%
+			summarise(size = n()) %>%
+			summarise(mean_size = mean(size)) %>%
+			pull(mean_size)
 		clusters <- reactive_clusters$df_pacmap_network$cluster
 		paste(
-			"Network Clustering:",
 			"Number of Clusters:", length(unique(clusters[clusters != -1])),
-			"Noise Flows:", sum(clusters == -1)
+			"\nMean Cluster Size:",mean_size,
+			"\nNoise Flows:", sum(clusters == -1)
 		)
 	})
+	
 	
 	# Flow Map (Leaflet)
 	output$flow_map <- renderLeaflet({
@@ -357,17 +363,15 @@ server <- function(input, output, session) {
 		selected_ids <- selected_points()
 		req(selected_ids)
 		
-		# Setze die Geometriespalte explizit auf line_geom
 		selected_flows <- sf_trips_sub_transformed %>%
 			filter(flow_id_temp %in% selected_ids) %>%
-			st_set_geometry("line_geom")  # Setzt line_geom als aktive Geometriespalte
+			st_set_geometry("line_geom")
 		
 		leaflet() %>%
 			addProviderTiles(providers$CartoDB.Positron) %>%
-			addPolylines(data = sf_network_transformed, color = "gray", weight = 1, opacity = 0.9) %>%
+			addPolylines(data = sf_network_transformed, color = "gray", weight = 1, opacity = 0.7) %>%
 			addPolylines(data = selected_flows, color = "blue", weight = 2, opacity = 1)
 	})
 }
 
 shinyApp(ui, server)
-
