@@ -23,13 +23,16 @@ sf_network <- st_read(con, char_network)
 # char_schema <- paste0("data_", paste0(subset, collapse = "_"))
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[4, "schema_name"]
+char_schema <- available_schemas[9, "schema_name"]
 sf_trips_sub <- st_read(
 	con,
 	query = paste0("SELECT * FROM ",
 								 char_schema,
 								 ".data")) %>%
-	rename(flow_id_temp = flow_id)
+	select(-c(flow_id_temp, flow_id)) 
+
+
+sf_trips_sub$flow_id_temp <- 1:nrow(sf_trips_sub)
 # available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 # 
 # char_data <- available_mapped_trip_data[2, "table_name"]
@@ -127,7 +130,8 @@ ui <- fluidPage(
 					 ),
 					 textOutput("network_cluster_output"),
 					 textInput("flow_id_input_network", "Select Flow ID for Network KNN:", value = "", placeholder = "Enter Flow ID"),
-					 plotlyOutput("scatter_plot_network", height = "600px")
+					 plotlyOutput("scatter_plot_network", height = "600px"),
+					 downloadButton("download", "Download Selected")
 		)
 	),
 	fluidRow(
@@ -139,13 +143,19 @@ ui <- fluidPage(
 server <- function(input, output, session) {
 	# Transformiere die Geometrien ins WGS 84 (EPSG:4326)
 	sf_network_transformed <- st_transform(sf_network, crs = 4326)
-	sf_trips_sub_transformed <- sf_trips_sub %>% 
+	sf_trips_sub_transformed <- sf_trips_sub %>%
 		mutate(line_geom = st_transform(line_geom, crs = 4326))
 	
 	# Reactive Values for Clustering
 	reactive_clusters <- reactiveValues(
 		df_pacmap_euclid = NULL,
 		df_pacmap_network = NULL
+	)
+	
+	# Temporäre Speicherung der Cluster-Auswahl
+	temp_selected_clusters <- reactiveValues(
+		euclid = NULL,
+		network = NULL
 	)
 	
 	# Reactive Clustering
@@ -155,6 +165,15 @@ server <- function(input, output, session) {
 		
 		reactive_clusters$df_pacmap_network <- py_hdbscan(np, hdbscan, matrix_pacmap_network, input$min_cluster_size)
 		updateSelectizeInput(session, "network_cluster", choices = unique(reactive_clusters$df_pacmap_network$cluster), server = TRUE)
+	})
+	
+	# Temporäre Speicherung der Cluster-Auswahl
+	observeEvent(input$euclid_cluster, {
+		temp_selected_clusters$euclid <- as.numeric(input$euclid_cluster)
+	})
+	
+	observeEvent(input$network_cluster, {
+		temp_selected_clusters$network <- as.numeric(input$network_cluster)
 	})
 	
 	# Zufällige Farben für die Cluster
@@ -205,29 +224,44 @@ server <- function(input, output, session) {
 		}
 	}
 	
-	# Beobachtung für Euclidean Cluster-Auswahl
-	observeEvent(input$euclid_cluster, {
-		selected_clusters <- as.numeric(input$euclid_cluster)
-		if (is.null(selected_clusters) || length(selected_clusters) == 0) {
-			selected_points(NULL)
-		} else {
+
+	
+	observeEvent(input$go_button_euclid, {
+		input_id <- input$flow_id_input_euclid
+		selected_clusters <- temp_selected_clusters$euclid
+		
+		if (!is.null(input_id) && input_id != "") {
+			cat("Flow ID (Euclidean) eingegeben: ", input_id, "\n")
+			update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_euclid)
+		} else if (!is.null(selected_clusters) && length(selected_clusters) > 0) {
 			points <- reactive_clusters$df_pacmap_euclid %>%
 				filter(cluster %in% selected_clusters) %>%
 				pull(flow_id)
 			selected_points(points)
+			cat("Cluster-Auswahl (Euclidean) bestätigt: ", selected_clusters, "\n")
+		} else {
+			selected_points(NULL)
+			cat("Keine gültige Auswahl für Euclidean bestätigt.\n")
 		}
 	})
 	
-	# Beobachtung für Network Cluster-Auswahl
-	observeEvent(input$network_cluster, {
-		selected_clusters <- as.numeric(input$network_cluster)
-		if (is.null(selected_clusters) || length(selected_clusters) == 0) {
-			selected_points(NULL)
-		} else {
+	# Anzeige nach Bestätigung für Network
+	observeEvent(input$go_button_network, {
+		input_id <- input$flow_id_input_network
+		selected_clusters <- temp_selected_clusters$network
+		
+		if (!is.null(input_id) && input_id != "") {
+			cat("Flow ID (Network) eingegeben: ", input_id, "\n")
+			update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_network)
+		} else if (!is.null(selected_clusters) && length(selected_clusters) > 0) {
 			points <- reactive_clusters$df_pacmap_network %>%
 				filter(cluster %in% selected_clusters) %>%
 				pull(flow_id)
 			selected_points(points)
+			cat("Cluster-Auswahl (Network) bestätigt: ", selected_clusters, "\n")
+		} else {
+			selected_points(NULL)
+			cat("Keine gültige Auswahl für Network bestätigt.\n")
 		}
 	})
 	
@@ -246,20 +280,6 @@ server <- function(input, output, session) {
 			clicked_id <- click_data$customdata
 			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_pacmap_network)
 		}
-	})
-	
-	# Beobachtung für Flow ID-Eingabe mit "Go" Button (Euclidean)
-	observeEvent(input$go_button_euclid, {
-		input_id <- input$flow_id_input_euclid
-		cat("written id (Euclidean): ", input_id, "\n")
-		update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_euclid)
-	})
-	
-	# Beobachtung für Flow ID-Eingabe mit "Go" Button (Network)
-	observeEvent(input$go_button_network, {
-		input_id <- input$flow_id_input_network
-		cat("written id (Network): ", input_id, "\n")
-		update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_network)
 	})
 	
 	# Scatter Plot für Euclidean Clustering
@@ -372,6 +392,29 @@ server <- function(input, output, session) {
 			addPolylines(data = sf_network_transformed, color = "gray", weight = 1, opacity = 0.7) %>%
 			addPolylines(data = selected_flows, color = "blue", weight = 2, opacity = 1)
 	})
+	
+	output$download <- downloadHandler(
+		filename = function() {
+			paste0(char_schema, "_sub.rds")
+		},
+		content = function(file) {
+			selected_clusters <- temp_selected_clusters$network
+			if (!is.null(selected_clusters) && length(selected_clusters) > 0) {
+				selected_flow_ids <- reactive_clusters$df_pacmap_network %>%
+					filter(cluster %in% selected_clusters) %>%
+					pull(flow_id)
+				print(head(sf_trips_sub_transformed))
+				cat("Number of flows in selected cluster: ", length(selected_flow_ids), "\n")
+				data_to_download <- sf_trips_sub_transformed %>%
+					filter(flow_id_temp %in% selected_flow_ids)
+				print(head(data_to_download))
+				write_rds(data_to_download, file)
+			}
+		}
+	)
 }
 
 shinyApp(ui, server)
+
+
+
