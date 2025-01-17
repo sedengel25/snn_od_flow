@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[4, "table_name"]
+char_network <- available_networks[5, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 
@@ -15,7 +15,7 @@ sf_network <- st_as_sf(dt_network)
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[25]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[24]
 char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -39,7 +39,7 @@ dt_dist_mat <- dt_dist_mat %>%
 # 2b OD flow data (PSQL)
 ################################################################################
 psql1_get_schemas(con)
-char_schema <- "nb_dd_standard_min250m_kw9_wdays2_3m_buffer50000m"
+char_schema <- "synthetic_dd_middle_2po_4pgr_cl100_noise500"
 
 #################################################################################
 # 3. Create PaCMAP init-file
@@ -151,9 +151,9 @@ gc()
 ################################################################################
 n_samples <- nrow(sf_trips_sub)
 for(dist_measure in char_dist_measures){
-	folder <- here::here(path_pacmap, dist_measure)
+	folder <- here::here(path_python, char_schema, dist_measure)
 
-	for(i in 1:20){
+	for(i in 1:5){
 		if(dist_measure != "flow_manhattan_pts_network"){
 			system2("/home/sebastiandengel/anaconda3/bin/python3", args = c(here::here(path_python,
 																						 "pacmap_init_cpu.py"),
