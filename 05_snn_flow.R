@@ -7,19 +7,19 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[1, "table_name"]
+char_network <- available_networks[4, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +
 	geom_sf(data=sf_network) 
 
-as_sfnetwork(sf_network)
+
 
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
 # stop("Have you chosen the right dist mat?")
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[24]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[25]
 char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -34,7 +34,7 @@ dt_dist_mat <- dt_dist_mat %>%
 
 available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
 print(available_mapped_trip_data)
-char_data <- available_mapped_trip_data[3, "table_name"]
+char_data <- available_mapped_trip_data[6, "table_name"]
 sf_trips <- st_read(con, char_data) %>%
 	rename("origin_id" = "id_edge_origin",
 				 "dest_id" = "id_edge_dest")
@@ -48,7 +48,7 @@ sf_trips <- sf_trips %>%
 	arrange(start_datetime)
 dist_filter <- 250
 int_kw <- c(9)
-int_wday <- c(1:4)
+int_wday <- c(2:3)
 #int_hours <- c(16:18)
 sf_trips_sub <- sf_trips %>%
 	filter(week %in% int_kw) %>%

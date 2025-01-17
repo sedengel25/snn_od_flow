@@ -23,14 +23,12 @@ sf_network <- st_read(con, char_network)
 # char_schema <- paste0("data_", paste0(subset, collapse = "_"))
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[9, "schema_name"]
+char_schema <- available_schemas[4, "schema_name"]
 sf_trips_sub <- st_read(
 	con,
 	query = paste0("SELECT * FROM ",
 								 char_schema,
-								 ".data")) %>%
-	select(-c(flow_id_temp, flow_id)) 
-
+								 ".data"))
 
 sf_trips_sub$flow_id_temp <- 1:nrow(sf_trips_sub)
 # available_mapped_trip_data <- psql1_get_mapped_trip_data(con)
@@ -53,32 +51,28 @@ sf_trips_sub$flow_id_temp <- 1:nrow(sf_trips_sub)
 
 
 
-int_min_cl_size <- 20
+
+#snn_k <- 20
 # char_schema <- "nb_dd_mickten_min100m_kw7_8_9_10_11_12_wdays1_2_3_4_5m_buffer50000m"
 matrix_pacmap_euclid <- np$load(here::here(path_python, 
 																		char_schema,
 																		"flow_manhattan_pts_euclid",
-																		"embedding_3d_2.npy")) 
-df_pacmap_euclid <-  py_hdbscan(np, hdbscan, matrix_pacmap_euclid, int_min_cl_size)
+																		"embedding_3d_3.npy")) 
+
+
+
+
+
+snn_dist_euclid <- proxy::dist(matrix_pacmap_euclid)
+#df_snn_euclid <- snn_custom(matrix_pacmap_euclid, snn_dist_euclid, snn_k)
 
 matrix_pacmap_network <- np$load(here::here(path_python, 
 																		char_schema,
 																		"flow_manhattan_pts_network",
 																		"embedding_3d_2.npy")) 
-	
-df_pacmap_network <-  py_hdbscan(np, hdbscan, matrix_pacmap_network, int_min_cl_size)
 
-
-# sf_trips_sub$cluster_net <- df_pacmap_network$cluster
-# sf_trips_sub$cluster_euclid <- df_pacmap_euclid$cluster
-# sf_trips_sub <- sf_trips_sub %>%
-# 	filter(st_geometry_type(o_closest_point) == "POINT", 
-# 				 st_geometry_type(d_closest_point) == "POINT")
-# cluster_stats_net <- get_length_var_cos_sim(sf_trips_sub, "cluster_net")
-# mean(cluster_stats_net %>% filter(cluster_net != -1) %>% pull(sd_trip_distance))
-# cluster_stats_euclid <- get_length_var_cos_sim(sf_trips_sub, "cluster_euclid")
-# mean(cluster_stats_euclid %>% filter(cluster_euclid != -1) %>% pull(sd_trip_distance))
-
+snn_dist_network <- proxy::dist(matrix_pacmap_network)
+#df_snn_network <- snn_custom(matrix_pacmap_network, snn_dist_network, snn_k)
 
 
 
@@ -107,10 +101,16 @@ ui <- fluidPage(
 		),
 		column(4, 
 					 h3("Common Settings"),
-					 sliderInput("min_cluster_size", "Min Cluster Size:", min = 5, max = 100, value = 30),
-					 textInput("knn_text", "Number of Nearest Neighbors (k):", value = "50", placeholder = "Enter k value"),
-					 radioButtons("show_clusters", "Show Clusters:", choices = c("Yes", "No"), selected = "No", inline = TRUE),
-					 checkboxInput("show_noise", "Show Noise (Cluster -1):", value = TRUE)
+					 sliderInput("snn_k", "k (SNN):", min = 5, max = 100, value = 20),
+					 textInput("knn_text", 
+					 					"Number of Nearest Neighbors (k):", 
+					 					value = "50", placeholder = "Enter k value"),
+					 actionButton("update_clustering", "Update Clustering", 
+					 						 style = "margin-top: 10px;"),
+					 radioButtons("show_clusters",
+					 						 "Show Clusters:", choices = c("Yes", "No"), 
+					 						 selected = "No", inline = TRUE),
+					 checkboxInput("show_noise", "Show Noise (Cluster 0):", value = TRUE)
 		),
 		column(4, 
 					 h3("Network Clustering"),
@@ -147,9 +147,14 @@ server <- function(input, output, session) {
 		mutate(line_geom = st_transform(line_geom, crs = 4326))
 	
 	# Reactive Values for Clustering
+	# reactive_clusters <- reactiveValues(
+	# 	df_snn_euclid = NULL,
+	# 	df_snn_network = NULL
+	# )
+	
 	reactive_clusters <- reactiveValues(
-		df_pacmap_euclid = NULL,
-		df_pacmap_network = NULL
+		df_snn_euclid = snn_custom(matrix_pacmap_euclid, snn_dist_euclid, 20),
+		df_snn_network = snn_custom(matrix_pacmap_network, snn_dist_network, 20)
 	)
 	
 	# Temporäre Speicherung der Cluster-Auswahl
@@ -159,13 +164,25 @@ server <- function(input, output, session) {
 	)
 	
 	# Reactive Clustering
-	observe({
-		reactive_clusters$df_pacmap_euclid <- py_hdbscan(np, hdbscan, matrix_pacmap_euclid, input$min_cluster_size)
-		updateSelectizeInput(session, "euclid_cluster", choices = unique(reactive_clusters$df_pacmap_euclid$cluster), server = TRUE)
+	observeEvent(input$update_clustering, {
+		k <- input$snn_k
+		reactive_clusters$df_snn_euclid <- snn_custom(matrix_pacmap_euclid, 
+																									snn_dist_euclid, 
+																									k)
+		updateSelectizeInput(session, "euclid_cluster", 
+												 choices = unique(reactive_clusters$df_snn_euclid$cluster), 
+												 server = TRUE)
 		
-		reactive_clusters$df_pacmap_network <- py_hdbscan(np, hdbscan, matrix_pacmap_network, input$min_cluster_size)
-		updateSelectizeInput(session, "network_cluster", choices = unique(reactive_clusters$df_pacmap_network$cluster), server = TRUE)
+		reactive_clusters$df_snn_network <- snn_custom(matrix_pacmap_network, 
+																									 snn_dist_network, 
+																									 k)
+		updateSelectizeInput(session, "network_cluster", 
+												 choices = unique(reactive_clusters$df_snn_network$cluster), 
+												 server = TRUE)
 	})
+	
+	
+
 	
 	# Temporäre Speicherung der Cluster-Auswahl
 	observeEvent(input$euclid_cluster, {
@@ -182,10 +199,10 @@ server <- function(input, output, session) {
 	}
 	
 	cluster_colors_euclid <- reactive({
-		setNames(random_colors(length(unique(reactive_clusters$df_pacmap_euclid$cluster))), unique(reactive_clusters$df_pacmap_euclid$cluster))
+		setNames(random_colors(length(unique(reactive_clusters$df_snn_euclid$cluster))), unique(reactive_clusters$df_snn_euclid$cluster))
 	})
 	cluster_colors_network <- reactive({
-		setNames(random_colors(length(unique(reactive_clusters$df_pacmap_network$cluster))), unique(reactive_clusters$df_pacmap_network$cluster))
+		setNames(random_colors(length(unique(reactive_clusters$df_snn_network$cluster))), unique(reactive_clusters$df_snn_network$cluster))
 	})
 	
 	# Reactive: Ausgewählte Punkte für beide Scatterplots
@@ -232,9 +249,9 @@ server <- function(input, output, session) {
 		
 		if (!is.null(input_id) && input_id != "") {
 			cat("Flow ID (Euclidean) eingegeben: ", input_id, "\n")
-			update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_euclid)
+			update_selected_points(input_id, input$knn_text, reactive_clusters$df_snn_euclid)
 		} else if (!is.null(selected_clusters) && length(selected_clusters) > 0) {
-			points <- reactive_clusters$df_pacmap_euclid %>%
+			points <- reactive_clusters$df_snn_euclid %>%
 				filter(cluster %in% selected_clusters) %>%
 				pull(flow_id)
 			selected_points(points)
@@ -252,9 +269,9 @@ server <- function(input, output, session) {
 		
 		if (!is.null(input_id) && input_id != "") {
 			cat("Flow ID (Network) eingegeben: ", input_id, "\n")
-			update_selected_points(input_id, input$knn_text, reactive_clusters$df_pacmap_network)
+			update_selected_points(input_id, input$knn_text, reactive_clusters$df_snn_network)
 		} else if (!is.null(selected_clusters) && length(selected_clusters) > 0) {
-			points <- reactive_clusters$df_pacmap_network %>%
+			points <- reactive_clusters$df_snn_network %>%
 				filter(cluster %in% selected_clusters) %>%
 				pull(flow_id)
 			selected_points(points)
@@ -265,12 +282,15 @@ server <- function(input, output, session) {
 		}
 	})
 	
+
+	
+	
 	# Beobachtung für KNN-Auswahl (Per Klick im Scatterplot)
 	observeEvent(event_data("plotly_click", source = "scatter_euclid"), {
 		click_data <- event_data("plotly_click", source = "scatter_euclid")
 		if (!is.null(click_data)) {
 			clicked_id <- click_data$customdata
-			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_pacmap_euclid)
+			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_snn_euclid)
 		}
 	})
 	
@@ -278,7 +298,7 @@ server <- function(input, output, session) {
 		click_data <- event_data("plotly_click", source = "scatter_network")
 		if (!is.null(click_data)) {
 			clicked_id <- click_data$customdata
-			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_pacmap_network)
+			update_selected_points(clicked_id, input$knn_text, reactive_clusters$df_snn_network)
 		}
 	})
 	
@@ -288,8 +308,8 @@ server <- function(input, output, session) {
 		show_clusters <- input$show_clusters == "Yes"
 		show_noise <- input$show_noise
 		
-		plot_data <- reactive_clusters$df_pacmap_euclid %>%
-			filter(show_noise | cluster != -1) %>%
+		plot_data <- reactive_clusters$df_snn_euclid %>%
+			filter(show_noise | cluster != 0) %>%
 			mutate(
 				color = if (show_clusters) as.character(cluster_colors_euclid()[as.character(cluster)]) else 
 					ifelse(flow_id %in% highlight_ids, "blue", "gray")
@@ -318,8 +338,8 @@ server <- function(input, output, session) {
 		show_clusters <- input$show_clusters == "Yes"
 		show_noise <- input$show_noise
 		
-		plot_data <- reactive_clusters$df_pacmap_network %>%
-			filter(show_noise | cluster != -1) %>%
+		plot_data <- reactive_clusters$df_snn_network %>%
+			filter(show_noise | cluster != 0) %>%
 			mutate(
 				color = if (show_clusters) as.character(cluster_colors_network()[as.character(cluster)]) else 
 					ifelse(flow_id %in% highlight_ids, "blue", "gray")
@@ -344,35 +364,35 @@ server <- function(input, output, session) {
 	
 	# Kennzahlen für Cluster-Informationen
 	output$euclid_cluster_output <- renderText({
-		req(reactive_clusters$df_pacmap_euclid)
-		mean_size <- reactive_clusters$df_pacmap_euclid %>%
-			filter(cluster != -1) %>%   # Ignoriere Noise-Cluster
+		req(reactive_clusters$df_snn_euclid)
+		mean_size <- reactive_clusters$df_snn_euclid %>%
+			filter(cluster != 0) %>%   # Ignoriere Noise-Cluster
 			group_by(cluster) %>%
 			summarise(size = n()) %>%
 			summarise(mean_size = mean(size)) %>%
 			pull(mean_size)
 		
-		clusters <- reactive_clusters$df_pacmap_euclid$cluster
+		clusters <- reactive_clusters$df_snn_euclid$cluster
 		paste(
-			"Number of Clusters:", length(unique(clusters[clusters != -1])),
+			"Number of Clusters:", length(unique(clusters[clusters != 0])),
 			"\nMean Cluster Size:", mean_size,
-			"\nNoise Flows:", sum(clusters == -1)
+			"\nNoise Flows:", sum(clusters == 0)
 		)
 	})
 	
 	output$network_cluster_output <- renderText({
-		req(reactive_clusters$df_pacmap_network)
-		mean_size <- reactive_clusters$df_pacmap_network %>%
-			filter(cluster != -1) %>%   # Ignoriere Noise-Cluster
+		req(reactive_clusters$df_snn_network)
+		mean_size <- reactive_clusters$df_snn_network %>%
+			filter(cluster != 0) %>%   # Ignoriere Noise-Cluster
 			group_by(cluster) %>%
 			summarise(size = n()) %>%
 			summarise(mean_size = mean(size)) %>%
 			pull(mean_size)
-		clusters <- reactive_clusters$df_pacmap_network$cluster
+		clusters <- reactive_clusters$df_snn_network$cluster
 		paste(
-			"Number of Clusters:", length(unique(clusters[clusters != -1])),
+			"Number of Clusters:", length(unique(clusters[clusters != 0])),
 			"\nMean Cluster Size:",mean_size,
-			"\nNoise Flows:", sum(clusters == -1)
+			"\nNoise Flows:", sum(clusters == 0)
 		)
 	})
 	
@@ -400,7 +420,7 @@ server <- function(input, output, session) {
 		content = function(file) {
 			selected_clusters <- temp_selected_clusters$network
 			if (!is.null(selected_clusters) && length(selected_clusters) > 0) {
-				selected_flow_ids <- reactive_clusters$df_pacmap_network %>%
+				selected_flow_ids <- reactive_clusters$df_snn_network %>%
 					filter(cluster %in% selected_clusters) %>%
 					pull(flow_id)
 				print(head(sf_trips_sub_transformed))

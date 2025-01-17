@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[3, "table_name"]
+char_network <- available_networks[4, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 ggplot() +

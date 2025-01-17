@@ -3,10 +3,14 @@ source("./src/config.R")
 source("./main_functions.R")
 
 
-path_cvnn <- "/home/sebastiandengel/cluster_validation/data"
-csv_files <- list.files(path_cvnn, pattern = "cvi_results", full.names = TRUE)
-df_res <- do.call(rbind, lapply(csv_files, read.csv))
-str(df_res)
+# path_cvnn <- "/home/sebastiandengel/cluster_validation/data"
+# csv_files <- list.files(path_cvnn, 
+# 												pattern = "cvi_snn_results", 
+# 												full.names = TRUE)
+# df_res <- do.call(rbind, lapply(csv_files, read.csv))
+# str(df_res)
+
+df_res <- read_rds("/home/sebastiandengel/Dokumente/1st_Paper/data/hdbscan_cvnn_dbcv_sil_ch_db_pacmap2_3_4d.rds")
 
 df_grouped <- df_res %>%
 	group_by(Distance_Measure, Clustering_Type, Min_Cluster_Size) %>%
@@ -27,10 +31,8 @@ df_grouped <- df_res %>%
 	) %>%
 	as.data.frame()
 
-
-
-
-
+table(df_grouped$Distance_Measure)
+table(df_grouped$Clustering_Type)
 
 # Berechnung der normierten Werte und des cvnn_index
 df_grouped <- df_grouped %>%
@@ -48,7 +50,8 @@ df_grouped <- df_grouped %>%
 				 cvnn_index, dbcv, sil, db, ch)
 
 str(df_grouped)
-
+table(df_grouped$Distance_Measure)
+table(df_grouped$Clustering_Type)
 
 # ggplot(df_r_ber, aes(x = trips)) +
 # 	geom_ribbon(aes(ymin = min_nd_od, ymax = max_nd_od, fill = "min/max"), alpha = 0.3) +
@@ -61,7 +64,7 @@ str(df_grouped)
 ggplot(df_grouped, aes(x = Min_Cluster_Size, y = log(n_cl), color = Distance_Measure)) +
 	geom_line() +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "log(Avg. Number of Clusters)",
 		color = "Distance Measure"
 	) +
@@ -79,7 +82,7 @@ ggplot(df_grouped, aes(x = Min_Cluster_Size, y = log(n_cl), color = Distance_Mea
 ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = Number_of_Clusters, fill = Distance_Measure)) +
 	geom_boxplot(outlier.shape = NA) +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "Number of Clusters",
 		fill = "Distance Measure"
 	) +
@@ -95,7 +98,7 @@ ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = Number_of_Clusters, fill = 
 ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = log(Number_of_Clusters), fill = Distance_Measure)) +
 	geom_boxplot(outlier.shape = NA) +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "log(Number of Clusters)",
 		fill = "Distance Measure"
 	) +
@@ -112,7 +115,7 @@ ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = log(Number_of_Clusters), fi
 ggplot(df_grouped, aes(x = Min_Cluster_Size, y = log(n_noise), color = Distance_Measure)) +
 	geom_line() +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "log(Avg. Number of Noise-Flows)",
 		color = "Distance Measure"
 	) +
@@ -129,7 +132,7 @@ ggplot(df_grouped, aes(x = Min_Cluster_Size, y = log(n_noise), color = Distance_
 ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = Number_of_Noise_Points, fill = Distance_Measure)) +
 	geom_boxplot(outlier.shape = NA) +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "Number of Noise-Flows",
 		fill = "Distance Measure"
 	) +
@@ -146,7 +149,7 @@ ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = Number_of_Noise_Points, fil
 ggplot(df_res, aes(x = factor(Min_Cluster_Size), y = log(Number_of_Noise_Points), fill = Distance_Measure)) +
 	geom_boxplot(outlier.shape = NA) +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "log(Number of Noise-Flows)",
 		fill = "Distance Measure"
 	) +
@@ -176,7 +179,7 @@ df_long <- df_grouped %>%
 ggplot(df_long, aes(x = Min_Cluster_Size, y = value, color = Distance_Measure)) +
 	geom_line() +
 	labs(
-		x = "Min Cluster Size",
+		x = "k",
 		y = "CVI",
 		color = "Distance Measure"
 	) +

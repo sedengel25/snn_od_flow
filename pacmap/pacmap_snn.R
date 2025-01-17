@@ -57,13 +57,13 @@ process_folder <- function(char_data) {
 
 			np_org <- np$array(snn_res_org$cluster - 1, dtype = "int32")
 			np$save(here::here(folder, file_cl), np_org)
-			for (i in 1:10) {
-				for(j in 2:4){
-					gc()
-					save_np(i, j, folder, k, eps, minpts)
-					gc()
-				}
-			}
+			# for (i in 1:10) {
+			# 	for(j in 2:4){
+			# 		gc()
+			# 		save_np(i, j, folder, k, eps, minpts)
+			# 		gc()
+			# 	}
+			# }
 		}
 	}
 }

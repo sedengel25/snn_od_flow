@@ -55,6 +55,7 @@ library(xtable)
 library(dplyr)
 library(ggh4x)
 library(shiny)
+library(proxy)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -167,3 +168,9 @@ lapply(mget(path_variables), function(char_paths) {
 	}
 })
 
+################################################################################
+# Initialize reticulate
+################################################################################
+reticulate::use_virtualenv("r-reticulate", required = TRUE)
+np <- reticulate::import("numpy")
+hdbscan <- reticulate::import("hdbscan")
