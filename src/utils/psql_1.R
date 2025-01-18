@@ -148,8 +148,8 @@ psql1_map_od_points_onto_network <- function(con, table_network, table_trips, cr
     ADD COLUMN IF NOT EXISTS o_dist_to_end double precision,
     ADD COLUMN IF NOT EXISTS d_dist_to_start double precision,
     ADD COLUMN IF NOT EXISTS d_dist_to_end double precision,
-    ADD COLUMN IF NOT EXISTS id_edge_origin bigint,
-    ADD COLUMN IF NOT EXISTS id_edge_dest bigint,
+    ADD COLUMN IF NOT EXISTS origin_id bigint,
+    ADD COLUMN IF NOT EXISTS dest_id bigint,
     ADD COLUMN IF NOT EXISTS trip_distance double precision;")
 	dbExecute(con, query)
 	
@@ -160,11 +160,11 @@ psql1_map_od_points_onto_network <- function(con, table_network, table_trips, cr
       o_closest_point = sub.o_closest_point,
       o_dist_to_start = sub.o_dist_to_start,
       o_dist_to_end = sub.o_dist_to_end,
-      id_edge_origin = sub.id_edge_origin
+      origin_id = sub.origin_id
     FROM (
       SELECT
         p.id_new,
-        n.id AS id_edge_origin,
+        n.id AS origin_id,
         ST_ClosestPoint(n.geom_way, p.origin_geom) AS o_closest_point,
         ST_Distance(ST_ClosestPoint(n.geom_way, p.origin_geom), ST_StartPoint(n.geom_way)) AS o_dist_to_start,
         ST_Distance(ST_ClosestPoint(n.geom_way, p.origin_geom), ST_EndPoint(n.geom_way)) AS o_dist_to_end
@@ -188,11 +188,11 @@ psql1_map_od_points_onto_network <- function(con, table_network, table_trips, cr
       d_closest_point = sub.d_closest_point,
       d_dist_to_start = sub.d_dist_to_start,
       d_dist_to_end = sub.d_dist_to_end,
-      id_edge_dest = sub.id_edge_dest
+      dest_id = sub.dest_id
     FROM (
       SELECT
         p.id_new,
-        n.id AS id_edge_dest,
+        n.id AS dest_id,
         ST_ClosestPoint(n.geom_way, p.dest_geom) AS d_closest_point,
         ST_Distance(ST_ClosestPoint(n.geom_way, p.dest_geom), ST_StartPoint(n.geom_way)) AS d_dist_to_start,
         ST_Distance(ST_ClosestPoint(n.geom_way, p.dest_geom), ST_EndPoint(n.geom_way)) AS d_dist_to_end

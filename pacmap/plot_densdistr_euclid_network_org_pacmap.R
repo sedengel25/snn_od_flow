@@ -7,13 +7,13 @@ source("./main_functions.R")
 ################################################################################
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[11, "schema_name"]
+char_schema <- available_schemas[15, "schema_name"]
 
 #################################################################################
 # 2. Density distribution plot (NETWORK DISTANCE)
 ################################################################################
 
-for(i in 1:5){
+for(i in 1:10){
 	char_embedding <- paste0("embedding_4d_", i, "_seed")
 	# print(char_embedding)
 	# embedding <- np$load(here::here(path_python, 

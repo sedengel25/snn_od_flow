@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[5, "table_name"]
+char_network <- available_networks[6, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 
@@ -15,7 +15,7 @@ sf_network <- st_as_sf(dt_network)
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[24]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[27]
 char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -39,7 +39,7 @@ dt_dist_mat <- dt_dist_mat %>%
 # 2b OD flow data (PSQL)
 ################################################################################
 psql1_get_schemas(con)
-char_schema <- "synthetic_dd_middle_2po_4pgr_cl100_noise500"
+char_schema <- "synth_local_n_130"
 
 #################################################################################
 # 3. Create PaCMAP init-file
@@ -50,6 +50,11 @@ sf_trips_sub <- st_read(
 								 char_schema, 
 								 ".data"))
 
+sf_trips_sub <- sf_trips_sub %>% mutate(origin_id = as.integer(origin_id),
+																				dest_id = as.integer(dest_id),
+																				id = as.integer(id))
+
+str(sf_trips_sub)
 df_coordinates <- data.frame(
 	o_x = st_coordinates(sf_trips_sub$origin_geom)[,1],
 	o_y = st_coordinates(sf_trips_sub$origin_geom)[,2],
@@ -76,7 +81,7 @@ lapply(char_dist_measures, function(x){
 ### Calculate euclidean based distances --------------------------------------
 main_calc_diff_flow_distances(char_schema = char_schema,
 															n = nrow(sf_trips_sub),
-															cores = int_cores)
+															cores = 1)
 
 query <- paste0("DROP INDEX IF EXISTS ", 
 								char_schema, 
@@ -153,7 +158,7 @@ n_samples <- nrow(sf_trips_sub)
 for(dist_measure in char_dist_measures){
 	folder <- here::here(path_python, char_schema, dist_measure)
 
-	for(i in 1:5){
+	for(i in 1:10){
 		if(dist_measure != "flow_manhattan_pts_network"){
 			system2("/home/sebastiandengel/anaconda3/bin/python3", args = c(here::here(path_python,
 																						 "pacmap_init_cpu.py"),

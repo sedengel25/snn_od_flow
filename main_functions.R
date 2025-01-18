@@ -106,8 +106,8 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 
 	dt_dest <- dt_dest %>%
 		arrange(id)
-	
-
+	print(head(dt_origin))
+	print(head(dt_dest))
 	### 2. Calc ND between OD flows ----------------------------------------------
 	# ND between origin points
 	gc()
@@ -115,7 +115,9 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 																					dt_network,
 																					dt_dist_mat,
 																					int_cores)
+
 	gc()
+	print(head(dt_o_pts_nd))
 	# ND between dest points
 	dt_d_pts_nd <- parallel_process_networks(dt_dest, 
 																					 dt_network,

@@ -2,10 +2,22 @@ Rcpp::sourceCpp("./src/helper_functions.cpp")
 source("./src/config.R")
 source("./main_functions.R")
 
+################################################################################
+# Synthetic data (QGIS)
+################################################################################
+path_synth_qgis <- here::here("data", "synthetic", "qgis")
+list.files(path_synth_qgis, pattern = "shp")
+char_schema <- "synth_local_n_130"
+shape_file <- paste0(char_schema, ".shp")
+sf_data <- st_read(here::here(path_synth_qgis, shape_file))
+sf_data$origin_geom <- lwgeom::st_startpoint(sf_data)
+sf_data$dest_geom <- lwgeom::st_endpoint(sf_data)
 
-
-
-
+psql1_create_schema(con, char_schema)
+sf_data$id_new <- sf_data$id
+sf_data$flow_id <- sf_data$id
+st_write(sf_data, con, Id(schema=char_schema, 
+															 table = "data"))
 ################################################################################
 # Scooter
 ################################################################################
