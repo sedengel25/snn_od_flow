@@ -158,7 +158,7 @@ n_samples <- nrow(sf_trips_sub)
 for(dist_measure in char_dist_measures){
 	folder <- here::here(path_python, char_schema, dist_measure)
 
-	for(i in 1:10){
+	for(i in 1:50){
 		if(dist_measure != "flow_manhattan_pts_network"){
 			system2("/home/sebastiandengel/anaconda3/bin/python3", args = c(here::here(path_python,
 																						 "pacmap_init_cpu.py"),

@@ -3,33 +3,18 @@ source("./src/config.R")
 source("./main_functions.R")
 
 #################################################################################
-# 1. Get original OD flow data based on subsets
+# 1. Get original OD flow data
 ################################################################################
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
 char_schema <- available_schemas[15, "schema_name"]
 
 #################################################################################
-# 2. Density distribution plot (NETWORK DISTANCE)
+# 2. Density distribution plots
 ################################################################################
 
 for(i in 1:10){
-	char_embedding <- paste0("embedding_4d_", i, "_seed")
-	# print(char_embedding)
-	# embedding <- np$load(here::here(path_python, 
-	# 																char_schema,
-	# 																"flow_manhattan_pts_network",
-	# 																paste0(char_embedding, ".npy")))
-	# print("------------NETWORK------------")
-	# print(head(embedding))
-	# next()
-	# embedding <- np$load(here::here(path_python, 
-	# 																char_schema,
-	# 																"flow_manhattan_pts_euclid",
-	# 																paste0(char_embedding, ".npy")))
-	# print("------------EUCLID------------")
-	# print(head(embedding))
-	# next()
+	char_embedding <- paste0("embedding_4d_", i, "_seed") 
 	pacmap_distmat <- proxy::dist(np$load(here::here(path_python, 
 																									 char_schema,
 																									 "flow_manhattan_pts_network",
