@@ -16,7 +16,7 @@ ggplot() +
 
 available_schemas <- psql1_get_schemas(con)
 available_schemas
-char_schema <- available_schemas[15, "schema_name"]
+char_schema <- available_schemas[20, "schema_name"]
 
 
 

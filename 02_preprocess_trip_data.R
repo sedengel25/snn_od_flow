@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 path_synth_qgis <- here::here("data", "synthetic", "qgis")
 list.files(path_synth_qgis, pattern = "shp")
-char_schema <- "synth_local_n_130"
+char_schema <- "synth_local_n_101"
 shape_file <- paste0(char_schema, ".shp")
 sf_data <- st_read(here::here(path_synth_qgis, shape_file))
 sf_data$origin_geom <- lwgeom::st_startpoint(sf_data)
@@ -18,6 +18,8 @@ sf_data$id_new <- sf_data$id
 sf_data$flow_id <- sf_data$id
 st_write(sf_data, con, Id(schema=char_schema, 
 															 table = "data"))
+
+length(unique(sf_data$id))
 ################################################################################
 # Scooter
 ################################################################################

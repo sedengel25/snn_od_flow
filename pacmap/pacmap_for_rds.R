@@ -39,7 +39,7 @@ dt_dist_mat <- dt_dist_mat %>%
 # 2b OD flow data (PSQL)
 ################################################################################
 psql1_get_schemas(con)
-char_schema <- "synth_local_n_130"
+char_schema <- "synth_local_n_101"
 
 #################################################################################
 # 3. Create PaCMAP init-file
@@ -81,7 +81,7 @@ lapply(char_dist_measures, function(x){
 ### Calculate euclidean based distances --------------------------------------
 main_calc_diff_flow_distances(char_schema = char_schema,
 															n = nrow(sf_trips_sub),
-															cores = 1)
+															cores = int_cores)
 
 query <- paste0("DROP INDEX IF EXISTS ", 
 								char_schema, 
@@ -158,7 +158,7 @@ n_samples <- nrow(sf_trips_sub)
 for(dist_measure in char_dist_measures){
 	folder <- here::here(path_python, char_schema, dist_measure)
 
-	for(i in 1:50){
+	for(i in 1:10){
 		if(dist_measure != "flow_manhattan_pts_network"){
 			system2("/home/sebastiandengel/anaconda3/bin/python3", args = c(here::here(path_python,
 																						 "pacmap_init_cpu.py"),
