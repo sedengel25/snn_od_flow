@@ -1370,4 +1370,44 @@ insert_flow_nd_in_distance_table <- function(char_schema, chunks, cores) {
 }
 
 
+convert_distmat_dt_to_matrix <- function(dt_dist_mat) {
+  num_ids <- length(unique(dt_dist_mat$from))
+  max_index <- max(c(dt_dist_mat$from, dt_dist_mat$to))
+  if (max_index > num_ids) {
+  	cat("Problem: Indizes überschreiten die Matrix-Dimension. Maximaler Index:", max_index, 
+  			"Matrixgröße:", num_ids, "\n")
+  }
+  gc()
+  matrix_flow_nd <- matrix(0, nrow = num_ids, ncol = num_ids)
+  gc()
+  matrix_flow_nd[cbind(dt_dist_mat$from, dt_dist_mat$to)] <- dt_dist_mat$distance
+  gc()
+  matrix_flow_nd[cbind(dt_dist_mat$to, dt_dist_mat$from)] <- dt_dist_mat$distance
+  rm(dt_dist_mat)
+  gc()
+  return(matrix_flow_nd)
+}
 
+
+
+replace_ids_with_values <- function(df_knn, matrix_distances) {
+	# Initialisiere ein leeres DataFrame für die Ergebnisse
+	df_values <- df_knn
+	
+	# Iteriere über jede Zeile von df_knn
+	for (i in 1:nrow(df_knn)) {
+		# Aktuelle Referenz-ID (flow_ref)
+		ref_id <- df_knn$flow_ref[i]
+		
+		# Hole die Nachbar-IDs aus den Spalten NN1, NN2, ...
+		neighbor_ids <- unlist(df_knn[i, -1]) # -1, um die Spalte 'flow_ref' zu ignorieren
+		
+		# Werte aus der Matrix holen (Zeile: ref_id, Spalte: neighbor_ids)
+		neighbor_values <- sapply(neighbor_ids, function(n_id) matrix_distances[ref_id, n_id])
+		
+		# Die Werte in den DataFrame schreiben
+		df_values[i, -1] <- neighbor_values
+	}
+	
+	return(df_values)
+}

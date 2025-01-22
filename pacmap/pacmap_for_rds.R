@@ -94,11 +94,31 @@ dbExecute(con, query)
 
 
 ### Calculate network based distances ----------------------------------------
-matrix_flow_nd <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
+dt_network_dist_mat <- main_nd_dist_mat_ram(sf_trips_sub, dt_network, dt_dist_mat)
 rm(dt_dist_mat)
 gc()
-matrix_flow_nd[1:5,1:5]
 
+df_knn_network <- cpp_find_knn(dt_network_dist_mat,
+															k = nrow(sf_trips_sub) - 1,
+															flow_ids =  1:nrow(sf_trips_sub))
+head(df_knn_network)
+
+matrix_flow_nd <- convert_distmat_dt_to_matrix(dt_dist_mat = dt_network_dist_mat)
+rm(dt_network_dist_mat)
+gc()
+
+
+df_knn_network_val <- replace_ids_with_values(df_knn = df_knn_network,
+												matrix_distances = matrix_flow_nd)
+df_knn_network_val$flow_ref <- 0
+
+np_knn_network_val <- np$array(as.matrix(df_knn_network_val))
+rm(df_knn_network_val)
+gc()
+df_knn_network <- df_knn_network - 1
+np_knn_network_idx <- np$array(as.matrix(df_knn_network))
+rm(df_knn_network)
+gc()
 ################################################################################
 # 4. Write network dist-mat to np-file
 ################################################################################
@@ -114,8 +134,14 @@ if (!dir.exists(folder)) {
 }
 write.csv(df_coordinates, here::here(folder,
 																		 "df_coordinates.csv"), row.names = FALSE)
-npy_file <- here::here(path_pacmap, dist_measure, "dist_mat.npy")
-np$save(npy_file, np$array(matrix_flow_nd, dtype = "int32"))
+npy_distmat <- here::here(path_pacmap, dist_measure, "dist_mat.npy")
+npy_knn_idx <- here::here(path_pacmap, dist_measure, "knn_idx.npy")
+npy_knn_dists <- here::here(path_pacmap, dist_measure, "knn_dists.npy")
+np$save(npy_distmat, np$array(matrix_flow_nd, dtype = "int32"))
+np$save(npy_knn_dists, np$array(np_knn_network_val, dtype = "int32"))
+np$save(npy_knn_idx, np$array(np_knn_network_idx, dtype = "int32"))
+head(np_knn_network_idx)
+tail(np_knn_network_idx)
 rm(matrix_flow_nd)
 gc()
 
@@ -133,6 +159,9 @@ if (!dir.exists(folder)) {
 }
 write.csv(df_coordinates, here::here(folder,
 																		 "df_coordinates.csv"), row.names = FALSE)
+
+
+
 system2("/usr/bin/sudo", c("chown", "-R", "postgres", folder))
 main_psql_dist_mat_to_matrix(char_schema = char_schema,
 														 dist_measure = dist_measure,
@@ -147,8 +176,31 @@ system2("python3", args = c(here::here(path_python,
 
 files_delete <- list.files(folder, "chunk", full.names = TRUE)
 unlink(files_delete)
-	
+
 gc()
+
+# Get dist-mat-datatable
+dt_euclidean_dist_mat <- st_read(
+	con,
+	query = paste0("SELECT * FROM ", 
+								 char_schema, 
+								 ".flow_distances")) %>%
+	rename(from = flow_id_i,
+				 to = flow_id_j,
+				 distance = flow_manhattan_pts_euclid) %>%
+	select(-flow_manhattan_pts_network) %>%
+	as.data.table()
+# Make dist-mat datatable symmetric
+dt_euclidean_dist_mat <- rbind(
+	dt_euclidean_dist_mat,
+	dt_euclidean_dist_mat[, .(from = to, to = from, distance = distance)]
+)
+
+
+df_knn_euclid <- cpp_find_knn(dt_euclidean_dist_mat,
+						 k = nrow(sf_trips_sub) - 1,
+						 flow_ids =  1:nrow(sf_trips_sub))
+tail(df_knn_euclid)
 
 
 ################################################################################
@@ -158,7 +210,7 @@ n_samples <- nrow(sf_trips_sub)
 for(dist_measure in char_dist_measures){
 	folder <- here::here(path_python, char_schema, dist_measure)
 
-	for(i in 1:10){
+	for(i in 1:100){
 		if(dist_measure != "flow_manhattan_pts_network"){
 			system2("/home/sebastiandengel/anaconda3/bin/python3", args = c(here::here(path_python,
 																						 "pacmap_init_cpu.py"),
@@ -178,6 +230,7 @@ for(dist_measure in char_dist_measures){
 		}
 		gc()
 	}
+	break
 }
 
 

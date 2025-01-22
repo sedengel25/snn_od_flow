@@ -30,126 +30,123 @@ p <- ggplot(sf_data) +
 		y = "Latitude"
 	) +
 	theme_minimal()
-ggplotly(p)
+#ggplotly(p)
 
 #################################################################################
 # 2. Density distribution plots
 ################################################################################
+char_embedding <- "embedding_4d_5nNB_0.3qsMN_0.6qsFP_2.0ratMN_4.0ratFP"
 
-for(i in 1:10){
-	char_embedding <- paste0("embedding_4d_", i, "_noseed") 
-	
-	
-	
-	
-	org_distmat <- np$load(here::here(path_python,
-																						char_schema,
-																						"flow_manhattan_pts_network",
-																						"dist_mat.npy")) %>%
-		as.matrix()
-	
-	
-	min_val <- min(org_distmat)
-	max_val <- max(org_distmat)
-	org_distmat <- (org_distmat - min_val) / (max_val - min_val)
-	org_network_distances <- org_distmat[upper.tri(org_distmat)]
-	n_samples <- nrow(org_distmat)
-	rm(org_distmat)
-	gc()
-	
-	
 
-	org_distmat <- np$memmap(here::here(path_python,
-																			char_schema,
-																			"flow_manhattan_pts_euclid",
-																			"dist_mat.npy"),
-													 dtype = "float32", 
-													 mode = "r",
-													 shape = tuple(n_samples, n_samples)) %>%
-		as.matrix()
-	
-	
-	min_val <- min(org_distmat)
-	max_val <- max(org_distmat)
-	org_distmat <- (org_distmat - min_val) / (max_val - min_val)
-	org_euclid_distances <- org_distmat[upper.tri(org_distmat)]
-	rm(org_distmat)
-	gc()
-	
-	
 
-	
-	
-	
-	pacmap_distmat <- proxy::dist(np$load(here::here(path_python, 
-																									 char_schema,
-																									 "flow_manhattan_pts_network",
-																									 paste0(char_embedding, ".npy")))) %>%
-		as.matrix()
-	
-	min_val <- min(pacmap_distmat)
-	max_val <- max(pacmap_distmat)
-	pacmap_distmat <- (pacmap_distmat - min_val) / (max_val - min_val)
-	pacmap_network_distances <- pacmap_distmat[upper.tri(pacmap_distmat)]
-	rm(pacmap_distmat)
-	gc()
-	
-	
-	pacmap_distmat <- proxy::dist(np$load(here::here(path_python, 
-																									 char_schema,
-																									 "flow_manhattan_pts_euclid",
-																									 paste0(char_embedding, ".npy")))) %>%
-		as.matrix()
-	
-	min_val <- min(pacmap_distmat)
-	max_val <- max(pacmap_distmat)
-	pacmap_distmat <- (pacmap_distmat - min_val) / (max_val - min_val)
-	pacmap_euclid_distances <- pacmap_distmat[upper.tri(pacmap_distmat)]
-	rm(pacmap_distmat)
-	gc()
-	
-	
-	df <- data.frame(org_network_distances = org_network_distances,
-									 org_euclid_distances = org_euclid_distances,
-									 pacmap_euclid_distances = pacmap_euclid_distances,
-									 pacmap_network_distances = pacmap_network_distances)
-	rm(org_network_distances)
-	gc()
-	rm(org_euclid_distances)
-	gc()
-	rm(pacmap_euclid_distances)
-	gc()
-	rm(pacmap_network_distances)
-	gc()
-	df_long <- pivot_longer(df, cols = everything(),
-													names_to = "distance_type",
-													values_to = "distance")
-	rm(df)
-	gc()
-	p <- ggplot(df_long, aes(x = distance, fill = distance_type)) +
-		geom_density(alpha = 0.6) + # Alpha für Transparenz
-		labs(
-			title = "Density Plots für verschiedene Distance-Typen",
-			x = "Distance",
-			y = "Dichte",
-			fill = "Distance Type"
-		) +
-		theme_minimal() +
-		facet_wrap(~ distance_type, scales = "free", ncol = 2) + # 2x2 Layout
-		theme(
-			strip.text = element_text(size = 10, face = "bold"), # Facettentitel
-			legend.position = "none" # Entfernt die Legende, da Facetten eindeutig sind
-		)
-	
 
-	filename_pdf <- paste0(char_embedding, "_density_comp.pdf")
-	print(filename_pdf)
-	ggsave(here::here(path_python, char_schema, filename_pdf), 
-				 plot = p, 
-				 device = "pdf", 
-				 width = 8, 
-				 height = 6)
-}
+org_distmat <- np$load(here::here(path_python,
+																					char_schema,
+																					"flow_manhattan_pts_network",
+																					"dist_mat.npy")) %>%
+	as.matrix()
+
+
+min_val <- min(org_distmat)
+max_val <- max(org_distmat)
+org_distmat <- (org_distmat - min_val) / (max_val - min_val)
+org_network_distances <- org_distmat[upper.tri(org_distmat)]
+n_samples <- nrow(org_distmat)
+rm(org_distmat)
+gc()
+
+
+
+org_distmat <- np$load(here::here(path_python,
+																	char_schema,
+																	"flow_manhattan_pts_euclid",
+																	"dist_mat.npy")) %>%
+	as.matrix()
+
+
+min_val <- min(org_distmat)
+max_val <- max(org_distmat)
+org_distmat <- (org_distmat - min_val) / (max_val - min_val)
+org_euclid_distances <- org_distmat[upper.tri(org_distmat)]
+rm(org_distmat)
+gc()
+
+
+
+
+
+
+pacmap_distmat <- proxy::dist(np$load(here::here(path_python, 
+																								 char_schema,
+																								 "flow_manhattan_pts_network",
+																								 paste0(char_embedding, ".npy")))) %>%
+	as.matrix()
+
+min_val <- min(pacmap_distmat)
+max_val <- max(pacmap_distmat)
+pacmap_distmat <- (pacmap_distmat - min_val) / (max_val - min_val)
+pacmap_network_distances <- pacmap_distmat[upper.tri(pacmap_distmat)]
+rm(pacmap_distmat)
+gc()
+
+
+pacmap_distmat <- proxy::dist(np$load(here::here(path_python, 
+																								 char_schema,
+																								 "flow_manhattan_pts_euclid",
+																								 paste0(char_embedding, ".npy")))) %>%
+	as.matrix()
+
+min_val <- min(pacmap_distmat)
+max_val <- max(pacmap_distmat)
+pacmap_distmat <- (pacmap_distmat - min_val) / (max_val - min_val)
+pacmap_euclid_distances <- pacmap_distmat[upper.tri(pacmap_distmat)]
+rm(pacmap_distmat)
+gc()
+
+
+df <- data.frame(org_network_distances = org_network_distances,
+								 org_euclid_distances = org_euclid_distances,
+								 pacmap_euclid_distances = pacmap_euclid_distances,
+								 pacmap_network_distances = pacmap_network_distances)
+rm(org_network_distances)
+gc()
+rm(org_euclid_distances)
+gc()
+rm(pacmap_euclid_distances)
+gc()
+rm(pacmap_network_distances)
+gc()
+df_long <- pivot_longer(df, cols = everything(),
+												names_to = "distance_type",
+												values_to = "distance")
+rm(df)
+gc()
+p <- ggplot(df_long, aes(x = distance, fill = distance_type)) +
+	geom_density(alpha = 0.6) + # Alpha für Transparenz
+	labs(
+		title = "Density Plots für verschiedene Distance-Typen",
+		subtitle = char_embedding,
+		x = "Distance",
+		y = "Dichte",
+		fill = "Distance Type"
+	) +
+	theme_minimal() +
+	facet_wrap(~ distance_type, scales = "free", ncol = 2) + # 2x2 Layout
+	theme(
+		strip.text = element_text(size = 10, face = "bold"), # Facettentitel
+		legend.position = "none" # Entfernt die Legende, da Facetten eindeutig sind
+	)
+
+
+filename_pdf <- paste0(char_embedding, "_density_comp.pdf")
+print(filename_pdf)
+p
+ggsave(here::here(path_python, char_schema, filename_pdf), 
+			 plot = p, 
+			 device = "pdf", 
+			 width = 8, 
+			 height = 6)
+
 
 
 

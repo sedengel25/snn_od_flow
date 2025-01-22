@@ -410,7 +410,7 @@ Rcpp::DataFrame cpp_find_knn(Rcpp::DataFrame df,
 	Rcpp::IntegerVector flow_m = df["from"];
 	Rcpp::IntegerVector flow_n = df["to"];
 	Rcpp::IntegerVector distance = df["distance"];
-	
+
 	// Create a map to hold the nearest neighbors for each flow_m
 	std::map<int, std::vector<std::pair<int, int>>> nn_map;
 	
@@ -421,6 +421,8 @@ Rcpp::DataFrame cpp_find_knn(Rcpp::DataFrame df,
 		int dist = distance[i];
 		nn_map[m].push_back(std::make_pair(dist, n));
 	}
+	
+
 	
 	// Create a set to hold unique flow_m values
 	std::set<int> unique_flow_m_set(flow_ids.begin(), flow_ids.end());

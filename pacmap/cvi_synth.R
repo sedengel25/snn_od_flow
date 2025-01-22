@@ -115,58 +115,53 @@ cvi_snn <- function(embedding, k, eps, minpts, dist_measure) {
 	}
 }
 
-org_distmat_network %>% max()
-org_distmat_euclid %>% max()
+
 ################################################################################
 # 2. Run Clustering and CVI calculation
 ################################################################################
-for(i in 1:10){
-	char_embedding <- paste0("embedding_4d_", i, "_noseed") 
-	org_distmat_network <- np$load(here::here(path_python,
-																									 char_schema,
-																									 "flow_manhattan_pts_network",
-																									 "dist_mat.npy")) %>%
-		as.matrix()
-	
+char_embedding <- "embedding_4d_5nNB_0.3qsMN_0.6qsFP_2.0ratMN_4.0ratFP"
+org_distmat_network <- np$load(here::here(path_python,
+																								 char_schema,
+																								 "flow_manhattan_pts_network",
+																								 "dist_mat.npy")) %>%
+	as.matrix()
 
-	n_samples <- nrow(org_distmat_network) %>% as.integer()
-	org_distmat_euclid <- np$memmap(here::here(path_python,
-																													 char_schema,
-																													 "flow_manhattan_pts_euclid",
-																													"dist_mat.npy"),
-																	dtype = "float32", 
-																	mode = "r",
-																	shape = tuple(n_samples, n_samples)) %>%
-		as.matrix()
 
-	embedding_network <- np$load(here::here(path_python, 
-																													 char_schema,
-																													 "flow_manhattan_pts_network",
-																													 paste0(char_embedding, ".npy"))) 
-	
-	embedding_euclid <- np$load(here::here(path_python, 
-																													char_schema,
-																													"flow_manhattan_pts_euclid",
-																													paste0(char_embedding, ".npy"))) 
-	for(j in 1:nrow(param_grid)){
-		#j <- 4582
-		cat("j: ", j, "\n")
-		k <- param_grid[j, "k"]
-		eps <- param_grid[j, "eps"]
-		minpts <- param_grid[j, "minpts"]
+n_samples <- nrow(org_distmat_network) %>% as.integer()
+org_distmat_euclid <- np$memmap(here::here(path_python,
+																												 char_schema,
+																												 "flow_manhattan_pts_euclid",
+																												"dist_mat.npy"),
+																dtype = "float32", 
+																mode = "r",
+																shape = tuple(n_samples, n_samples)) %>%
+	as.matrix()
 
-		# ### Org - Network ----------------------------------------------------------
-		cvi_snn(org_distmat_network, k, eps, minpts, "org_network")
-		# ### Org - Euclidean --------------------------------------------------------
-		cvi_snn(org_distmat_euclid, k, eps, minpts, "org_euclid")
-		### PaCMAP - Network -------------------------------------------------------
-		cvi_snn(embedding_network, k, eps, minpts, "pacmap_network")
-		### PaCMAP - Euclidean -----------------------------------------------------
-		cvi_snn(embedding_euclid, k, eps, minpts, "pacmap_euclid")
-	}
-	break
+embedding_network <- np$load(here::here(path_python, 
+																												 char_schema,
+																												 "flow_manhattan_pts_network",
+																												 paste0(char_embedding, ".npy"))) 
+
+embedding_euclid <- np$load(here::here(path_python, 
+																												char_schema,
+																												"flow_manhattan_pts_euclid",
+																												paste0(char_embedding, ".npy"))) 
+for(j in 1:nrow(param_grid)){
+	#j <- 4582
+	cat("j: ", j, "\n")
+	k <- param_grid[j, "k"]
+	eps <- param_grid[j, "eps"]
+	minpts <- param_grid[j, "minpts"]
+
+	# ### Org - Network ----------------------------------------------------------
+	cvi_snn(org_distmat_network, k, eps, minpts, "org_network")
+	# ### Org - Euclidean --------------------------------------------------------
+	cvi_snn(org_distmat_euclid, k, eps, minpts, "org_euclid")
+	### PaCMAP - Network -------------------------------------------------------
+	cvi_snn(embedding_network, k, eps, minpts, "pacmap_network")
+	### PaCMAP - Euclidean -----------------------------------------------------
+	cvi_snn(embedding_euclid, k, eps, minpts, "pacmap_euclid")
 }
-
 write_rds(df_cvi, file = paste0("cvi_", char_schema,".rds"))
 
 
@@ -196,70 +191,43 @@ ggplot(df_cvi_log, aes(x = value_edit, fill = dist_measure)) +
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-df_cvi <- df_cvi %>%
-	group_by(k, minpts, eps) %>%  # Gruppiere nach k, minpts und eps
-	mutate(id = cur_group_id()) %>%  # Erstelle eine eindeutige ID pro Gruppe
-	ungroup() %>%
-	as.data.frame()
-
-
-
-
-df_cvi %>%
-	filter(dist_measure == "pacmap_euclid" & cvi == "hubert") %>%
-	arrange(desc(value))
-
-
-
-snn_network_res <- sNNclust(embedding_network, 9,8,6) 
-sf_data$network_cl <- snn_network_res$cluster
-snn_euclid_res <- sNNclust(embedding_euclid, 9,8,8) 
-sf_data$euclid_cl <- snn_euclid_res$cluster
-
-# snn_org_network_res <- sNNclust(org_distmat_network, 11,10,9) 
+# df_cvi <- df_cvi %>%
+# 	group_by(k, minpts, eps) %>%  # Gruppiere nach k, minpts und eps
+# 	mutate(id = cur_group_id()) %>%  # Erstelle eine eindeutige ID pro Gruppe
+# 	ungroup() %>%
+# 	as.data.frame()
+# 
+# 
+# 
+# 
+# df_cvi %>%
+# 	filter(dist_measure == "pacmap_euclid" & cvi == "hubert") %>%
+# 	arrange(desc(value))
+# 
+# 
+# 
+# snn_network_res <- sNNclust(embedding_network, 9,8,6) 
+# sf_data$network_cl <- snn_network_res$cluster
+# snn_euclid_res <- sNNclust(embedding_euclid, 9,8,8) 
+# sf_data$euclid_cl <- snn_euclid_res$cluster
+# 
+# snn_org_network_res <- sNNclust(org_distmat_network, 11,10,9)
 # sf_data$org_network_cl <- snn_network_res$cluster
-# snn_org_euclid_res <- sNNclust(org_distmat_euclid, 11,10,9) 
+# snn_org_euclid_res <- sNNclust(org_distmat_euclid, 11,10,9)
 # sf_data$org_euclid_cl <- snn_euclid_res$cluster
-
-
-
-p <- ggplot(sf_data[sf_data$euclid_cl!=0,]) +
-	geom_sf(aes(geometry = geometry, color = as.factor(euclid_cl))) +
-	scale_color_discrete(name = "Cluster") +
-	labs(
-		title = "Visualization of Clusters",
-		x = "Longitude",
-		y = "Latitude"
-	) +
-	theme_minimal()
-ggplotly(p)
+# 
+# 
+# 
+# p <- ggplot(sf_data[sf_data$euclid_cl!=0,]) +
+# 	geom_sf(aes(geometry = geometry, color = as.factor(euclid_cl))) +
+# 	scale_color_discrete(name = "Cluster") +
+# 	labs(
+# 		title = "Visualization of Clusters",
+# 		x = "Longitude",
+# 		y = "Latitude"
+# 	) +
+# 	theme_minimal()
+# ggplotly(p)
 
 
 
