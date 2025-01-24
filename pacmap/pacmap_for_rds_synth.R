@@ -30,7 +30,7 @@ save_npy_distmat_and_knn <- function(matrix_knn_val,
 	# Save knn containing values
 	np_knn_val <- np$array(matrix_knn_val)
 	file_np_knn_val <- here::here(folder, "knn_dists.npy")
-	np$save(file_np_knn_val, np$array(np_knn_network_val, dtype = "float32"))
+	np$save(file_np_knn_val, np$array(np_knn_val, dtype = "float32"))
 	
 	# Save knn containing indices
 	matrix_knn_idx <- matrix_knn_idx - 1 # (Für Python)
@@ -156,9 +156,9 @@ for(dist_measure in char_dist_measures){
 																								"--dim ", dim,
 																								"--quantile_start_MN", 0.3,
 																								"--quantile_start_FP", 0.6,
-																								"--n_neighbors", 5,
-																								"--MN_ratio", 2,
-																								"--FP_ratio", 4),
+																								"--n_neighbors", 20,
+																								"--MN_ratio", 0.5,
+																								"--FP_ratio", 2),
 						stdout = "", stderr = "")
 	}
 }

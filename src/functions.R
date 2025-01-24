@@ -169,7 +169,7 @@ calc_local_node_dist_mat <- function(buffer) {
 															 target = "target",
 															 edge_attr = "m",
 															 edge_key = "id")
-	
+	print(g)
 	nodes <- c(sf_network$source, sf_network$target) %>% unique
 	
 	list_dt <- vector("list", length(nodes))
@@ -179,7 +179,7 @@ calc_local_node_dist_mat <- function(buffer) {
 																								source = node, 
 																								weight = "m", 
 																								cutoff = buffer)
-		
+		print(res)
 		targets = names(res) %>% as.integer
 		sources = rep(node, length(targets))
 		distances = res %>% as.numeric

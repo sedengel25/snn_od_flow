@@ -172,6 +172,11 @@ lapply(mget(path_variables), function(char_paths) {
 ################################################################################
 # Initialize reticulate
 ################################################################################
+#reticulate::install_python()
+# reticulate::virtualenv_create(envname = "reticulate_env", 
+# 															python = "/home/sebastiandengel/.pyenv/versions/3.9.21/bin/python3.9", 
+# 															method = "venv")
 reticulate::use_virtualenv("r-reticulate", required = TRUE)
+nx <- reticulate::import("networkx")
 np <- reticulate::import("numpy")
 hdbscan <- reticulate::import("hdbscan")

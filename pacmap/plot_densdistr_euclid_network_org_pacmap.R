@@ -35,7 +35,7 @@ p <- ggplot(sf_data) +
 #################################################################################
 # 2. Density distribution plots
 ################################################################################
-char_embedding <- "embedding_4d_5nNB_0.3qsMN_0.6qsFP_2.0ratMN_4.0ratFP"
+char_embedding <- "embedding_4d_6nNB_0.3qsMN_0.6qsFP_0.5ratMN_2.0ratFP"
 
 
 

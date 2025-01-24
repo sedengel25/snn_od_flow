@@ -119,7 +119,7 @@ cvi_snn <- function(embedding, k, eps, minpts, dist_measure) {
 ################################################################################
 # 2. Run Clustering and CVI calculation
 ################################################################################
-char_embedding <- "embedding_4d_5nNB_0.3qsMN_0.6qsFP_2.0ratMN_4.0ratFP"
+char_embedding <- "embedding_4d_6nNB_0.3qsMN_0.6qsFP_0.5ratMN_2.0ratFP"
 org_distmat_network <- np$load(here::here(path_python,
 																								 char_schema,
 																								 "flow_manhattan_pts_network",
