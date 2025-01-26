@@ -16,7 +16,7 @@ source("./main_functions.R")
 # Action: ...
 get_line_ids_of_mapped_points <- function(sf_points, sf_roads) {
 	# Create small buffers around the points...
-	sf_points_buffered <- st_buffer(sf_points, dist = 1e-7)  # Eine sehr kleine Puffergröße, z.B. 0.1 Meter, je nach Ihren Einheiten
+	sf_points_buffered <- st_buffer(sf_points, dist = 1e-7)  
 	#...to get the linestrings and its attributes...
 	sf_points_with_ids <- st_join(sf_points_buffered, sf_roads, join = st_intersects)
 	# ...and then get the centroids of the buffer's polygons
@@ -69,13 +69,7 @@ create_ellipse_with_points <- function(sf_network,
 	# Get sf polygon representing the ellipse
 	ellipse_polygon <- st_polygon(list(ellipse_points))
 	
-	p <- ggplot() +
-		geom_sf(data = sf_network, color = "blue", size = 0.5) + 
-		geom_sf(data = ellipse_polygon, fill = "red", alpha = 0.4) +     
-		theme_minimal() +
-		labs(title = "Straßennetz und Polygone", 
-				 subtitle = "Darstellung mit ggplot2 und geom_sf") 
-	#print(p)
+
 	
 	
 	sf_ellipse <- st_sfc(ellipse_polygon, crs = st_crs(sf_network))
@@ -106,6 +100,9 @@ create_ellipse_with_points <- function(sf_network,
 		st_as_sf()
 	st_crs(sf_roads) <- st_crs(sf_network)
 
+
+	
+	
 	#...to sample points
 	sfc_points <- st_sample(sf_roads, size = n, type = "random")
 	sfc_points <- sfc_points[(!st_is_empty(sfc_points)) %>% which]
@@ -113,6 +110,13 @@ create_ellipse_with_points <- function(sf_network,
 	st_crs(sfc_points) <- st_crs(sfc_points)
 	sf_points <- sfc_points %>% st_as_sf()
 	sf_points$point_id <- 1:nrow(sf_points)
+	p <- ggplot() +
+		geom_sf(data = sf_network, color = "blue", size = 0.5) + 
+		geom_sf(data = sf_roads, color = "red", size = 0.7) +    
+		geom_sf(data = sf_points, color = "green", size = 0.1) +    
+		theme_minimal() +
+		labs(title = "Selected road segments")
+	print(p)
 	sf_centroids <- get_line_ids_of_mapped_points(sf_points, sf_roads)
 
 	return(sf_centroids)
@@ -126,13 +130,13 @@ create_ellipse_with_points <- function(sf_network,
 # Returns: sf-dataframe
 # Output: ...
 # Action: ...
-create_sorted_linestrings <- function(start_points, end_points) {
-	linestrings <- mapply(function(start, end) {
-		st_linestring(rbind(st_coordinates(start), st_coordinates(end)))
-	}, st_geometry(start_points), st_geometry(end_points), SIMPLIFY = FALSE)
-	
-	st_sf(geometry = st_sfc(linestrings), crs = st_crs(start_points))
-}
+# create_sorted_linestrings <- function(start_points, end_points) {
+# 	linestrings <- mapply(function(start, end) {
+# 		st_linestring(rbind(st_coordinates(start), st_coordinates(end)))
+# 	}, st_geometry(start_points), st_geometry(end_points), SIMPLIFY = FALSE)
+# 	
+# 	st_sf(geometry = st_sfc(linestrings), crs = st_crs(start_points))
+# }
 
 # Documentation: generate_noise_points
 # Usage: generate_noise_points(n)
@@ -158,7 +162,7 @@ generate_noise_points <- function(n) {
 	# 
 	# sf_nearest_points <- do.call(st_sfc, list_nearest_points) 
 	sf_sampled_points <- st_line_sample(sf_network, type = "regular", n = 5)
-	sf_sampled_points <- st_cast(sf_random_points, "POINT")
+	sf_sampled_points <- st_cast(sf_sampled_points, "POINT")
 	int_idx <- sample(1:length(sf_sampled_points), size = n)
 	sf_sampled_points <- sf_sampled_points[int_idx,]
 	ggplot()+
@@ -186,11 +190,9 @@ generate_noise_lines <- function(sf_startpoints) {
 		# length <- runif(1, min_length, max_length)
 		
 		list_degree_dist <- get_degree_furthest_direction(sf_convex_hull, sf_startpoints[i,"origin_geom"])
-		print(list_degree_dist)
 		dist_farthest_dir <- list_degree_dist$distance
 		angle_farthest_dir <- list_degree_dist$degree
-		length <- sample(num_min_length:0.8*dist_farthest_dir, 1) %>% as.numeric()
-		print(sf_startpoints[i,"origin_geom"])
+		length <- sample(num_min_length:(0.7*dist_farthest_dir), 1) %>% as.numeric
 		start_point <- st_coordinates(sf_startpoints[i,"origin_geom"])
 		end_point <- c(start_point[1] + length * cos(angle_farthest_dir), 
 									 start_point[2] + length * sin(angle_farthest_dir))
@@ -231,11 +233,14 @@ generate_noise_lines <- function(sf_startpoints) {
 					 "dest_target"="target",
 					 "dest_geom"="geom")
 
+
 	# Combine mapped origin- and destination points into LINESTRINGS
 	final_lines <- mapply(function(start, end) {
 		end_coords <- st_coordinates(end)
-		st_sfc(st_linestring(rbind(st_coordinates(start), end_coords)))
+		line <- st_sfc(st_linestring(rbind(st_coordinates(start), end_coords)))
+		return(line)
 	}, start = sf_startpoints$origin_geom, end = sf_points_dest_noise$dest_geom, SIMPLIFY = FALSE)
+	
 
 	sf_final_lines <- do.call(rbind, final_lines) %>% st_sfc
 	sf_final_noise <- cbind(sf_final_lines, 
@@ -243,13 +248,12 @@ generate_noise_lines <- function(sf_startpoints) {
 													sf_points_dest_noise)
 	sf_final_noise <- st_sf(geometry = sf_final_noise)
 	sf_final_noise <- st_set_crs(sf_final_noise, st_crs(sf_startpoints))
-	
 	return(sf_final_noise)
 }
 
 
 
-get_avg_radius_bbox <- function(sf_convex_hull) {
+main_get_avg_radius_bbox <- function(sf_convex_hull) {
 	centroid <- st_centroid(sf_convex_hull)
 	boundary_points <- st_cast(sf_convex_hull, "POINT")  
 	distances <- st_distance(centroid, boundary_points)
@@ -275,6 +279,36 @@ get_degree_furthest_direction <- function(sf_convex_hull, sf_point) {
 }
 
 
+calculate_angle <- function(start, end) {
+	delta_lon <- st_coordinates(end)[1] - st_coordinates(start)[1]
+	delta_lat <- st_coordinates(end)[2] - st_coordinates(start)[2]
+	return(atan2(delta_lat, delta_lon) * 180 / pi) # Winkel in Grad
+}
+
+
+
+connect_od_points_to_linestrings <- function(sf_origin, sf_dest) {
+  dist_matrix <- as.matrix(st_distance(sf_origin, sf_dest))
+  dist_matrix <- drop_units(dist_matrix)
+  assignment <- solve_LSAP(dist_matrix) %>% as.numeric()
+  # Ergebnisse extrahieren
+  results <- data.frame(
+  	start_id = 1:nrow(sf_origin),
+  	end_id = assignment,
+  	distance = dist_matrix[cbind(1:nrow(sf_origin), assignment)]
+  )
+  # Liniengeometrien erstellen
+  sf_lines <- do.call(rbind, lapply(1:nrow(results), function(i) {
+  	st_sfc(st_linestring(rbind(
+  		st_coordinates(sf_origin[results$start_id[i], ]),
+  		st_coordinates(sf_dest[results$end_id[i], ])
+  	)), crs = 4326)
+  }))
+  
+  sf_lines <- st_sf(results, geometry = sf_lines)
+  return(sf_lines)
+}
+
 # Documentation: create_clusters
 # Usage: create_clusters(n_clusters, n_noiseflows)
 # Description: Main function that creates n clusters on a given road network
@@ -282,7 +316,7 @@ get_degree_furthest_direction <- function(sf_convex_hull, sf_point) {
 # Returns: sf-dataframe
 # Output: ...
 # Action: ...
-create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
+main_create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	
 
 	
@@ -293,7 +327,7 @@ create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	for (i in 1:n_clusters) {
 
 	  # Configuration for LINESTRINGS
-	  n_points <- sample(20:60, 1)
+	  n_points <- sample(10:40, 1)
 	  # base_length_flows <- sample(250:5000, 1)
 	  # base_angle <- runif(1, 0, 2 * pi)
 	  # cos(base_angle)
@@ -305,10 +339,11 @@ create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	  # 																		max = variance_length_flows)
 
 	  # Configuration for sample of origin points 
-	  width_min <- avg_radius/5
-	  width_m <- sample(width_min:width_min*4, 1)
-	  height_min <- width_min/2
-	  height_m <- sample(height_min:height_min*4, 1)
+	  width_min <- avg_radius/8
+	  width_m <- sample(width_min:width_min*3, 1)
+	  # height_min <- width_min/2
+	  # height_m <- sample(height_min:height_min*4, 1)
+	  height_m <- width_m
 	  
 	  # Get random road within the network
 	  sf_sampled_road <- sample_n(sf_network, 1)
@@ -331,11 +366,11 @@ create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	  # Get one of the origin points...
 	  sf_startpoint <- sample(sf_points_origin$origin_geom, 1)
 	  list_degree_dist <- get_degree_furthest_direction(sf_convex_hull, sf_startpoint)
-	  print(list_degree_dist)
 	  dist_farthest_dir <- list_degree_dist$distance
 	  angle_farthest_dir <- list_degree_dist$degree
-	  length <- sample(num_min_length:0.8*dist_farthest_dir, 1) %>% as.numeric
-	  print(length)
+	  length <- sample(num_min_length:(0.7*dist_farthest_dir), 1) %>% as.numeric
+	  cat("farthest distance: ", dist_farthest_dir, "\n")
+	  cat("used distance: ", length, "\n")
 	  # ...and use it as startpoint for the determination of destination points
 	  sf_endpoint <- sf_startpoint + c(length * cos(angle_farthest_dir), 
 	  																 length * sin(angle_farthest_dir))
@@ -370,30 +405,33 @@ create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	  sf_points_origin <- sf_points_origin %>% st_as_sf()
 	  sf_points_dest <- sf_points_dest %>% st_as_sf()
 	  
-	  center_origin <- st_centroid(st_union(sf_points_origin))
-	  center_destination <- st_centroid(st_union(sf_points_dest))
-	  
-	  # Get angle between center-points of origin- and destination points
-	  #	to get a proxy of the direction
-	  angle <- atan2(st_coordinates(center_destination)[2] - st_coordinates(center_origin)[2],
-	  							 st_coordinates(center_destination)[1] - st_coordinates(center_origin)[1])
-	  
-	  # Convert angle in degrees
-	  angle_deg <- angle * 180 / pi
-	  
-	  # Sort x- or y-coordinates depending on the angle between their center-points
-	  if (abs(angle_deg) <= 45 || abs(angle_deg) > 135) {
-	  	# Sort x-coordinates
-	  	sf_points_origin <- sf_points_origin[order(st_coordinates(sf_points_origin)[, 1]), ]
-	  	sf_points_dest <- sf_points_dest[order(st_coordinates(sf_points_dest)[, 1]), ]
-	  } else {
-	  	# Sort y-coordinates
-	  	sf_points_origin <- sf_points_origin[order(st_coordinates(sf_points_origin)[, 2]), ]
-	  	sf_points_dest <- sf_points_dest[order(st_coordinates(sf_points_dest)[, 2]), ]
-	  }
-
-	  # Combine sorted OD-points into LINESTRINGS
-	  sf_linestrings <- create_sorted_linestrings(sf_points_origin, sf_points_dest)
+	  sf_linestrings <- connect_od_points_to_linestrings(sf_origin = sf_points_origin,
+	  																 sf_dest = sf_points_dest)
+		print(head(sf_linestrings))
+	  # center_origin <- st_centroid(st_union(sf_points_origin))
+	  # center_destination <- st_centroid(st_union(sf_points_dest))
+	  # 
+	  # # Get angle between center-points of origin- and destination points
+	  # #	to get a proxy of the direction
+	  # angle <- atan2(st_coordinates(center_destination)[2] - st_coordinates(center_origin)[2],
+	  # 							 st_coordinates(center_destination)[1] - st_coordinates(center_origin)[1])
+	  # 
+	  # # Convert angle in degrees
+	  # angle_deg <- angle * 180 / pi
+	  # 
+	  # # Sort x- or y-coordinates depending on the angle between their center-points
+	  # if (abs(angle_deg) <= 45 || abs(angle_deg) > 135) {
+	  # 	# Sort x-coordinates
+	  # 	sf_points_origin <- sf_points_origin[order(st_coordinates(sf_points_origin)[, 1]), ]
+	  # 	sf_points_dest <- sf_points_dest[order(st_coordinates(sf_points_dest)[, 1]), ]
+	  # } else {
+	  # 	# Sort y-coordinates
+	  # 	sf_points_origin <- sf_points_origin[order(st_coordinates(sf_points_origin)[, 2]), ]
+	  # 	sf_points_dest <- sf_points_dest[order(st_coordinates(sf_points_dest)[, 2]), ]
+	  # }
+	  # 
+	  # # Combine sorted OD-points into LINESTRINGS
+	  # sf_linestrings <- create_sorted_linestrings(sf_points_origin, sf_points_dest)
 	  all_lines[[i]] <- sf_linestrings
 	  all_origin_pts[[i]] <- sf_points_origin
 	  all_dest_pts[[i]] <- sf_points_dest
@@ -419,7 +457,6 @@ create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	
 	# Generate noise points
 	sf_startpoints <- generate_noise_points(n = n_noiseflows)
-	print(sf_startpoints)
 	sf_startpoints <- sf_startpoints %>% st_as_sf()
 	sf_startpoints$point_id <- 1:nrow(sf_startpoints)
 	st_crs(sf_startpoints) <- st_crs(sf_network)
@@ -454,11 +491,55 @@ create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 					 origin_geom,
 					 dest_geom)
 	st_crs(sf_noiseflows) <- st_crs(sf_network)
-
 	sf_final <- rbind(sf_noiseflows[,-c(11,12)], 
-										sf_clusters[,-c(11,12)])
+										sf_clusters[,-c(1,2,3,14,15)])
 	sf_final$flow_id <- 1:nrow(sf_final)
 	return(sf_final)
+}
+
+main_remove_dangling_edges <- function(sf_network) {
+	sf_network_sfs <- as_sfnetwork(sf_network)
+	
+	from_degrees <- sf_network_sfs %>%
+		activate(edges) %>%
+		as_tibble() %>%
+		count(from, name = "from_degree") %>%
+		as.data.frame() %>%
+		select(from, from_degree) %>%
+		rename(node = from)
+	
+	
+	to_degrees <- sf_network_sfs %>%
+		activate(edges) %>%
+		as_tibble() %>%
+		count(to, name = "to_degree") %>%
+		as.data.frame() %>%
+		select(to, to_degree) %>%
+		rename(node = to)
+	
+	node_degrees <- full_join(from_degrees, 
+														to_degrees, 
+														by = "node")
+	node_degrees <- node_degrees %>%
+		mutate(total_degree = coalesce(from_degree, 0) + coalesce(to_degree, 0)) %>%
+		select(node, total_degree)
+	
+	
+	dangling_edges <- sf_network_sfs %>%
+		activate(edges) %>%
+		as_tibble() %>%
+		left_join(node_degrees, by = c("from" = "node")) %>%
+		rename(from_degree = total_degree) %>%
+		left_join(node_degrees, by = c("to" = "node")) %>%
+		rename(to_degree = total_degree) %>%
+		mutate(is_dangling = (from_degree == 1 | to_degree == 1)) %>%
+		filter(is_dangling)
+	
+	dangling_edge_ids <- dangling_edges$id
+	sf_network_cleaned <- sf_network_sfs %>%
+		activate(edges) %>%
+		filter(!id %in% dangling_edge_ids) %>%
+		st_as_sf()
 }
 
 
@@ -470,16 +551,17 @@ avail_networks
 char_network <- avail_networks[7, "table_name"]
 sf_network <- st_read(con, char_network) %>%
 	rename(geom_way = geometry)
-ggplot()+
-	geom_sf(data=sf_network)
+sf_network <- main_remove_dangling_edges(sf_network)
+
+
 sf_convex_hull <- st_convex_hull(st_union(sf_network))
 
 
-num_avg_radius <- get_avg_radius_bbox(sf_convex_hull)
-num_min_length <- num_avg_radius/50
-n_clusters <- 10
+num_avg_radius <- main_get_avg_radius_bbox(sf_convex_hull)
+num_min_length <- num_avg_radius/15
+n_clusters <- 20
 n_noiseflows <- 100
-sf_clusters <- create_synth_dataset(n_clusters = n_clusters, 
+sf_clusters <- main_create_synth_dataset(n_clusters = n_clusters, 
 																		n_noiseflows = n_noiseflows,
 																		num_avg_radius)
 
@@ -495,14 +577,14 @@ table(sf_clusters$cluster_id)
 colors <- c(rgb(211/255, 211/255, 211/255, 0.5), rainbow(n_clusters))
 names(colors) <- c("0", as.character(1:n_clusters))
 
-ggplot(data = sf_clusters) +
+p <- ggplot(data = sf_clusters) +
 	geom_sf(data=sf_network) +
 	geom_sf(aes(color = as.character(cluster_id)), size = 1) +
 	scale_color_manual(values = colors) +
 	theme_minimal() +
 	labs(color = "Cluster ID")
 
-
+ggplotly(p)
 write_rds(sf_clusters, paste0("./synthetic/data/synthetic_",
 															char_network,
 															"_cl",
