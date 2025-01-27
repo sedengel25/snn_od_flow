@@ -82,7 +82,7 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 					 "geom" = "o_closest_point") %>%
 		as.data.table()
 
-	dt_origin <- add_dist_start_end(dt_origin)
+
 	
 
 	
@@ -94,8 +94,9 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 					 "geom" = "d_closest_point") %>%
 		as.data.table
 
+
+	dt_origin <- add_dist_start_end(dt_origin)
 	dt_dest <- add_dist_start_end(dt_dest)
-	
 	
 	
 	dt_network <- dt_network %>%
@@ -106,6 +107,8 @@ main_nd_dist_mat_ram <- function(sf_trips, dt_network, dt_dist_mat) {
 
 	dt_dest <- dt_dest %>%
 		arrange(id)
+	print(dt_origin)
+	print(dt_dest)
 	### 2. Calc ND between OD flows ----------------------------------------------
 	# ND between origin points
 	gc()
@@ -917,4 +920,50 @@ main_map_od_points_on_cluster_networks <- function(files) {
 	}
 	
 	return(processed_files)
+}
+
+
+main_remove_dangling_edges <- function(sf_network) {
+	sf_network_sfs <- as_sfnetwork(sf_network)
+	
+	from_degrees <- sf_network_sfs %>%
+		activate(edges) %>%
+		as_tibble() %>%
+		count(from, name = "from_degree") %>%
+		as.data.frame() %>%
+		select(from, from_degree) %>%
+		rename(node = from)
+	
+	
+	to_degrees <- sf_network_sfs %>%
+		activate(edges) %>%
+		as_tibble() %>%
+		count(to, name = "to_degree") %>%
+		as.data.frame() %>%
+		select(to, to_degree) %>%
+		rename(node = to)
+	
+	node_degrees <- full_join(from_degrees, 
+														to_degrees, 
+														by = "node")
+	node_degrees <- node_degrees %>%
+		mutate(total_degree = coalesce(from_degree, 0) + coalesce(to_degree, 0)) %>%
+		select(node, total_degree)
+	
+	
+	dangling_edges <- sf_network_sfs %>%
+		activate(edges) %>%
+		as_tibble() %>%
+		left_join(node_degrees, by = c("from" = "node")) %>%
+		rename(from_degree = total_degree) %>%
+		left_join(node_degrees, by = c("to" = "node")) %>%
+		rename(to_degree = total_degree) %>%
+		mutate(is_dangling = (from_degree == 1 | to_degree == 1)) %>%
+		filter(is_dangling)
+	
+	dangling_edge_ids <- dangling_edges$id
+	sf_network_cleaned <- sf_network_sfs %>%
+		activate(edges) %>%
+		filter(!id %in% dangling_edge_ids) %>%
+		st_as_sf()
 }

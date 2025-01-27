@@ -7,35 +7,35 @@ source("./main_functions.R")
 ################################################################################
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[19, "schema_name"]
+char_schema <- available_schemas[23, "schema_name"]
 sf_data <- st_read(
 	con,
 	query = paste0("SELECT * FROM ", 
 								 char_schema, 
 								 ".data")) %>%
-	mutate(cluster = as.integer(cluster))
+	mutate(cluster = as.integer(cluster_id))
 
 
 psql1_get_available_networks(con)
-sf_network <- st_read(con, "dd_synth_2po_4pgr")
+sf_network <- st_read(con, "dd_synth_2po_4pgr_collapsed")
 sf_network
-p <- ggplot(sf_data) +
-	geom_sf(data = sf_network, aes(geometry = geom_way), 
-					color = "black", size = 0.2) +
-	geom_sf(aes(geometry = line_geom, color = as.factor(cluster))) +
-	scale_color_discrete(name = "Cluster") +
-	labs(
-		title = "Visualization of Clusters",
-		x = "Longitude",
-		y = "Latitude"
-	) +
-	theme_minimal()
-#ggplotly(p)
+# p <- ggplot(sf_data) +
+# 	geom_sf(data = sf_network, aes(geometry = geom_way), 
+# 					color = "black", size = 0.2) +
+# 	geom_sf(aes(geometry = line_geom, color = as.factor(cluster))) +
+# 	scale_color_discrete(name = "Cluster") +
+# 	labs(
+# 		title = "Visualization of Clusters",
+# 		x = "Longitude",
+# 		y = "Latitude"
+# 	) +
+# 	theme_minimal()
+# ggplotly(p)
 
 #################################################################################
 # 2. Density distribution plots
 ################################################################################
-char_embedding <- "embedding_4d_6nNB_0.3qsMN_0.6qsFP_0.5ratMN_2.0ratFP"
+char_embedding <- "embedding_4d_10nNB_0.4qsMN_0.7qsFP_0.5ratMN_2.0ratFP"
 
 
 

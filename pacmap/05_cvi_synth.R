@@ -7,14 +7,14 @@ source("./main_functions.R")
 ################################################################################
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[19, "schema_name"]
+char_schema <- available_schemas[23, "schema_name"]
 
 sf_data <- st_read(
 	con,
 	query = paste0("SELECT * FROM ", 
 								 char_schema, 
 								 ".data")) %>%
-	mutate(cluster = as.integer(cluster))
+	mutate(cluster = as.integer(cluster_id))
 
 # Parameterbereiche definieren
 k_values <- seq(2, 25, by = 1)         # Beispiel: k von 5 bis 50
@@ -119,7 +119,7 @@ cvi_snn <- function(embedding, k, eps, minpts, dist_measure) {
 ################################################################################
 # 2. Run Clustering and CVI calculation
 ################################################################################
-char_embedding <- "embedding_4d_6nNB_0.3qsMN_0.6qsFP_0.5ratMN_2.0ratFP"
+char_embedding <- "embedding_4d_10nNB_0.4qsMN_0.7qsFP_0.5ratMN_2.0ratFP"
 org_distmat_network <- np$load(here::here(path_python,
 																								 char_schema,
 																								 "flow_manhattan_pts_network",

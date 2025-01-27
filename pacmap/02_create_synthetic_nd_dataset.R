@@ -497,50 +497,7 @@ main_create_synth_dataset <- function(n_clusters, n_noiseflows, avg_radius) {
 	return(sf_final)
 }
 
-main_remove_dangling_edges <- function(sf_network) {
-	sf_network_sfs <- as_sfnetwork(sf_network)
-	
-	from_degrees <- sf_network_sfs %>%
-		activate(edges) %>%
-		as_tibble() %>%
-		count(from, name = "from_degree") %>%
-		as.data.frame() %>%
-		select(from, from_degree) %>%
-		rename(node = from)
-	
-	
-	to_degrees <- sf_network_sfs %>%
-		activate(edges) %>%
-		as_tibble() %>%
-		count(to, name = "to_degree") %>%
-		as.data.frame() %>%
-		select(to, to_degree) %>%
-		rename(node = to)
-	
-	node_degrees <- full_join(from_degrees, 
-														to_degrees, 
-														by = "node")
-	node_degrees <- node_degrees %>%
-		mutate(total_degree = coalesce(from_degree, 0) + coalesce(to_degree, 0)) %>%
-		select(node, total_degree)
-	
-	
-	dangling_edges <- sf_network_sfs %>%
-		activate(edges) %>%
-		as_tibble() %>%
-		left_join(node_degrees, by = c("from" = "node")) %>%
-		rename(from_degree = total_degree) %>%
-		left_join(node_degrees, by = c("to" = "node")) %>%
-		rename(to_degree = total_degree) %>%
-		mutate(is_dangling = (from_degree == 1 | to_degree == 1)) %>%
-		filter(is_dangling)
-	
-	dangling_edge_ids <- dangling_edges$id
-	sf_network_cleaned <- sf_network_sfs %>%
-		activate(edges) %>%
-		filter(!id %in% dangling_edge_ids) %>%
-		st_as_sf()
-}
+
 
 
 ################################################################################
@@ -551,15 +508,15 @@ avail_networks
 char_network <- avail_networks[7, "table_name"]
 sf_network <- st_read(con, char_network) %>%
 	rename(geom_way = geometry)
-sf_network <- main_remove_dangling_edges(sf_network)
+
 
 
 sf_convex_hull <- st_convex_hull(st_union(sf_network))
 
 
 num_avg_radius <- main_get_avg_radius_bbox(sf_convex_hull)
-num_min_length <- num_avg_radius/15
-n_clusters <- 20
+num_min_length <- num_avg_radius/10
+n_clusters <- 5
 n_noiseflows <- 100
 sf_clusters <- main_create_synth_dataset(n_clusters = n_clusters, 
 																		n_noiseflows = n_noiseflows,
@@ -585,26 +542,15 @@ p <- ggplot(data = sf_clusters) +
 	labs(color = "Cluster ID")
 
 ggplotly(p)
-write_rds(sf_clusters, paste0("./synthetic/data/synthetic_",
-															char_network,
-															"_cl",
-															n_clusters,
-															"_noise",
-															n_noiseflows,
-															".rds"))
 
-# for(i in 1:nrow(param_grid)){
-# 	n_clusters <- param_grid[i, "n_clusters"]
-# 	n_noiseflows <- param_grid[i, "n_noiseflows"]
-# 	sf_clusters <- create_synth_dataset(n_clusters = 100, 
-# 																			n_noiseflows = 50000)
-# 	
-# 	write_rds(sf_clusters, paste0("./data/experiment/",
-# 																100,
-# 																"_",
-# 																50000,
-# 																".rds"))
-# }
+char_schema <- paste0("synthetic_rand_cl",
+											n_clusters,
+											"_noise",
+											n_noiseflows)
+psql1_create_schema(con, char_schema)
+st_write(sf_clusters, con, Id(schema=char_schema,
+															 table = "data"))
+
 
 
 

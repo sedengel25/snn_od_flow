@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[6, "table_name"]
+char_network <- available_networks[7, "table_name"]
 dt_network <- st_read(con, char_network) %>% as.data.table
 sf_network <- st_as_sf(dt_network)
 
@@ -15,7 +15,7 @@ sf_network <- st_as_sf(dt_network)
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[27]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[28]
 char_buffer <- "50000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -25,13 +25,13 @@ dt_dist_mat <- dt_dist_mat %>%
 #################################################################################
 # 2a OD flow data (RDS)
 ################################################################################
-
-# Get OD-trip data from rds-file -----------------------------------------------
-#char_path <- here::here("synthetic", "data")
-# list.files(pattern = ".rds", recursive = TRUE)
+# char_path <- here::here("synthetic", "data")
+# list.files(char_path, pattern = ".rds", recursive = FALSE)
+# char_schema <- "synthetic_dd_synth_2po_4pgr_collapsed_cl10_noise100"
 # sf_trips_sub <- read_rds(paste0(char_path, "/", char_schema, ".rds"))
 # sf_trips_sub$flow_id <- 1:nrow(sf_trips_sub)
-# st_write(sf_trips_sub, con, Id(schema=char_schema, 
+# psql1_create_schema(con, char_schema)
+# st_write(sf_trips_sub, con, Id(schema=char_schema,
 # 															 table = "data"))
 
 
@@ -39,7 +39,7 @@ dt_dist_mat <- dt_dist_mat %>%
 # 2b OD flow data (PSQL)
 ################################################################################
 psql1_get_schemas(con)
-char_schema <- "synth_local_n_101"
+char_schema <- "synthetic_rand_cl10_noise100"
 
 #################################################################################
 # 3. Create PaCMAP init-file
