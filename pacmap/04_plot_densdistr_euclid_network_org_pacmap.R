@@ -7,7 +7,7 @@ source("./main_functions.R")
 ################################################################################
 available_schemas <- psql1_get_schemas(con)
 print(available_schemas)
-char_schema <- available_schemas[23, "schema_name"]
+char_schema <- available_schemas[26, "schema_name"]
 sf_data <- st_read(
 	con,
 	query = paste0("SELECT * FROM ", 
@@ -35,7 +35,7 @@ sf_network
 #################################################################################
 # 2. Density distribution plots
 ################################################################################
-char_embedding <- "embedding_4d_10nNB_0.4qsMN_0.7qsFP_0.5ratMN_2.0ratFP"
+char_embedding <- "embedding_4d_4nNB_0.4qsMN_0.6qsFP_0.5ratMN_2.0ratFP"
 
 
 

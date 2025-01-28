@@ -57,6 +57,7 @@ library(ggh4x)
 library(shiny)
 library(proxy)
 library(FNN)
+library(aricode)
 ################################################################################
 # Postgresql-DB connection
 ################################################################################
@@ -133,6 +134,9 @@ path_osm_sql <- here::here("data/osm_sql")
 path_input_data <- "data/input"
 
 path_python <- here::here("python")
+
+
+path_det_pacmap <- "/home/sebastiandengel/deterministic_pacmap/pacmap_synth.py"
 ################################################################################
 # File
 ################################################################################

@@ -3,11 +3,13 @@ source("./src/config.R")
 source("./main_functions.R")
 path_grass <- "/home/sebastiandengel/grassdata/utm32n/PERMANENT"
 list.files(path = path_grass, pattern = "collapsed")
-filename <- "dd_synth_2po_4pgr_collapsed"
+filename <- "dd_synthneuse_2po_4pgr_collapsed"
 shp_file <- paste0(filename, ".shp")
 sf_network <- st_read(here::here(path_grass, shp_file)) %>%
 	rename(id=cat) %>%
 	select(id, geometry)
+
+
 
 sf_network <- main_remove_dangling_edges(sf_network) %>%
 	select(geometry)
@@ -51,7 +53,7 @@ cat("Total components: ",
 cat("Biggest number of cohrerent components: ",
 		max(igraph_dist_mat_components$csize), "\n")
 write_rds(x = dt_dist_mat, file = paste0("./data/input/dt_dist_mat/",
-																				 "dd_synth_collapsed_",
+																				 "dd_synthneuse_collapsed_",
 																				 int_buffer,
 																				 "_dist_mat.rds"))
 summary(sf_network$m)

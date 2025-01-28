@@ -11,7 +11,7 @@ sourceCpp("./src/helper_functions.cpp")
 ################################################################################
 list.files(path = path_bbox_coordinates, pattern = "*.poly")
 
-char_region_abb <- "dd_synth"
+char_region_abb <- "dd_synthneuse"
 
 char_polygon_filename <- paste0(char_region_abb, ending_polygon)   
 
@@ -72,7 +72,7 @@ st_write(sf_network, con, char_network)
 ncol(sf_network)
 
 
-int_buffer <- 50000
+int_buffer <- 5000
 
 dt_dist_mat <- calc_local_node_dist_mat(buffer = int_buffer)
 

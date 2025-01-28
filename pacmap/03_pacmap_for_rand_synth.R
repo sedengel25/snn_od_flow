@@ -44,7 +44,7 @@ save_npy_distmat_and_knn <- function(matrix_knn_val,
 ################################################################################
 available_networks <- psql1_get_available_networks(con)
 print(available_networks)
-char_network <- available_networks[7, "table_name"]
+char_network <- available_networks[12, "table_name"]
 dt_network <- st_read(con, char_network) %>% 
 	as.data.table  %>%
 	rename(geom_way = geometry)
@@ -55,7 +55,7 @@ sf_network <- st_as_sf(dt_network)
 char_path_dt_dist_mat <- here::here("data", "input", "dt_dist_mat")
 char_av_dt_dist_mat_files <- list.files(char_path_dt_dist_mat)
 print(char_av_dt_dist_mat_files)
-char_dt_dist_mat <-  char_av_dt_dist_mat_files[28]
+char_dt_dist_mat <-  char_av_dt_dist_mat_files[29]
 char_buffer <- "5000"
 dt_dist_mat <- read_rds(here::here(
 	char_path_dt_dist_mat,
@@ -67,7 +67,7 @@ dt_dist_mat <- dt_dist_mat %>%
 # 2b OD flow data (PSQL)
 ################################################################################
 psql1_get_schemas(con)
-char_schema <- "synthetic_rand_cl5_noise100"
+char_schema <- "synthetic_rand_cl15_noise50_4"
 
 
 #################################################################################
@@ -132,8 +132,15 @@ save_npy_distmat_and_knn(matrix_knn_val = matrix_knn_network_val,
 												 matrix_knn_idx = matrix_knn_network_idx,
 												 matrix_distmat = matrix_distmat_network,
 												 dist_measure = char_dist_measures[2])
-
-
+rm(matrix_distmat_network)
+rm(matrix_distmat_euclid)
+rm(knn_res_network)
+rm(knn_res_euclid)
+rm(matrix_knn_network_val)
+rm(matrix_knn_network_idx)
+rm(matrix_knn_euclid_val)
+rm(matrix_knn_euclid_idx)
+gc()
 ################################################################################
 # 5. Creating 2d, 3d, 4d pacmap-embeddings
 ################################################################################
@@ -145,13 +152,13 @@ for(dist_measure in char_dist_measures){
 		cat("dimension: ", dim, "\n")
 		folder <- here::here(path_pacmap, dist_measure)
 		system2("/usr/bin/python3", args = c(path,
-																																		"--directory ", folder,
-																																		"--dim ", dim,
-																																		"--quantile_start_MN", 0.4,
-																																		"--quantile_start_FP", 0.7,
-																																		"--n_neighbors", 10,
-																																		"--MN_ratio", 0.5,
-																																		"--FP_ratio", 2),
+																				"--directory ", folder,
+																				"--dim ", dim,
+																				"--quantile_start_MN", 0.4,
+																				"--quantile_start_FP", 0.7,
+																				"--n_neighbors", 3,
+																				"--MN_ratio", 1,
+																				"--FP_ratio", 2),
 						stdout = "", stderr = "")
 	}
 }
